@@ -1,6 +1,6 @@
 /**
- * FIFO cost basis engine — ports v1 get_fifo_positions() exactly.
- * Operates on raw transaction rows, returns structured results.
+ * FIFO cost basis engine.
+ * Lot tuple layout: [remaining, costRate, acquiredAt, txId, originalAmount]
  */
 
 export interface FifoTxRow {
@@ -18,7 +18,7 @@ export interface TaxLot {
   acquiredAt: Date;
   originalAmount: number;
   remainingAmount: number;
-  costRate: number; // fiat per crypto
+  costRate: number; // fiat per crypto unit
 }
 
 export interface Disposal {
@@ -58,21 +58,31 @@ export interface FifoResult {
   }>;
 }
 
-const FIAT_CURRENCIES = new Set(["EUR", "USD", "CZK", "PLN", "GBP", "UAH", "RUB"]);
+// Fallback — callers should pass org fiat currencies from DB
+const DEFAULT_FIAT = new Set(["EUR", "USD", "CZK", "PLN", "GBP", "UAH", "RUB", "HUF", "RON"]);
+
+// Lot tuple indices
+const R = 0; // remaining
+const C = 1; // costRate
+const D = 2; // acquiredAt (Date)
+const T = 3; // txId
+const O = 4; // originalAmount
 
 export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoResult {
-  const fiatSet = fiatCurrencies ?? FIAT_CURRENCIES;
+  const fiatSet = fiatCurrencies ?? DEFAULT_FIAT;
   const sorted = [...rows].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-  // pair → queue of lots (mutable tuples [remaining, costRate, date, txId])
-  const queues = new Map<string, Array<[number, number, Date, string]>>();
+  // pair → queue of lots: [remaining, costRate, acquiredAt, txId, originalAmount]
+  const queues = new Map<string, Array<[number, number, Date, string, number]>>();
   const realized = new Map<string, Disposal[]>();
   const acquired = new Map<string, number>();
   const disposed = new Map<string, number>();
   const tradeCounts = new Map<string, number>();
 
   for (const row of sorted) {
-    if ((row.transactionType ?? "").trim() !== "Exchange") continue;
+    const txType = (row.transactionType ?? "").trim();
+    if (txType !== "Exchange") continue;
+
     const incCur = (row.incomeCurrency ?? "").trim();
     const outCur = (row.outcomeCurrency ?? "").trim();
     const incAmt = parseFloat(row.incomeAmount ?? "0") || 0;
@@ -83,9 +93,8 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
     const outFiat = fiatSet.has(outCur);
 
     if (incFiat && !outFiat) {
-      // SOLD crypto — income=fiat, outcome=crypto
-      const crypto = outCur, fiat = incCur;
-      const pair = `${crypto}/${fiat}`;
+      // SOLD crypto → income=fiat, outcome=crypto
+      const pair = `${outCur}/${incCur}`;
       const proceedsRate = incAmt / outAmt;
 
       if (!queues.has(pair)) queues.set(pair, []);
@@ -98,21 +107,23 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
 
       while (toDispose > 1e-9 && queue.length > 0) {
         const lot = queue[0];
-        const consumed = Math.min(lot[0], toDispose);
+        const consumed = Math.min(lot[R], toDispose);
         realized.get(pair)!.push({
           txId: row.id,
           disposedAt: row.timestamp,
           amount: consumed,
           proceedsRate,
-          costRate: lot[1],
-          gain: (proceedsRate - lot[1]) * consumed,
-          gainCurrency: fiat,
-          lotAcquiredAt: lot[2],
+          costRate: lot[C],
+          gain: (proceedsRate - lot[C]) * consumed,
+          gainCurrency: incCur,
+          lotAcquiredAt: lot[D],
         });
-        lot[0] -= consumed;
+        lot[R] -= consumed;
         toDispose -= consumed;
-        if (lot[0] <= 1e-9) queue.shift();
+        if (lot[R] <= 1e-9) queue.shift();
       }
+
+      // Short sell / no remaining lots — proceeds with zero cost basis
       if (toDispose > 1e-9) {
         realized.get(pair)!.push({
           txId: row.id,
@@ -121,18 +132,18 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
           proceedsRate,
           costRate: 0,
           gain: proceedsRate * toDispose,
-          gainCurrency: fiat,
+          gainCurrency: incCur,
           lotAcquiredAt: null,
         });
       }
     } else if (outFiat && !incFiat) {
-      // BOUGHT crypto — outcome=fiat, income=crypto
-      const crypto = incCur, fiat = outCur;
-      const pair = `${crypto}/${fiat}`;
+      // BOUGHT crypto → outcome=fiat, income=crypto
+      const pair = `${incCur}/${outCur}`;
       const costRate = outAmt / incAmt;
 
       if (!queues.has(pair)) queues.set(pair, []);
-      queues.get(pair)!.push([incAmt, costRate, row.timestamp, row.id]);
+      // FIX: store originalAmount (incAmt) as 5th element — not derived from total acquired
+      queues.get(pair)!.push([incAmt, costRate, row.timestamp, row.id, incAmt]);
       acquired.set(pair, (acquired.get(pair) ?? 0) + incAmt);
       tradeCounts.set(pair, (tradeCounts.get(pair) ?? 0) + 1);
     }
@@ -146,19 +157,18 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
     const queue = queues.get(pair) ?? [];
     const realizedList = realized.get(pair) ?? [];
 
+    // FIX: use lot[O] (originalAmount) not total acquired for this pair
     const lots: TaxLot[] = queue.map((q) => ({
-      txId: q[3],
-      acquiredAt: q[2],
-      originalAmount: acquired.get(pair) ?? q[0],
-      remainingAmount: q[0],
-      costRate: q[1],
+      txId: q[T],
+      acquiredAt: q[D],
+      originalAmount: q[O],
+      remainingAmount: q[R],
+      costRate: q[C],
     }));
 
-    const currentHolding = queue.reduce((s, q) => s + q[0], 0);
+    const currentHolding = queue.reduce((s, q) => s + q[R], 0);
     const totalRealizedGain = realizedList.reduce((s, d) => s + d.gain, 0);
-
-    // Weighted avg cost from open lots
-    const totalLotValue = queue.reduce((s, q) => s + q[0] * q[1], 0);
+    const totalLotValue = queue.reduce((s, q) => s + q[R] * q[C], 0);
     const avgCost = currentHolding > 1e-9 ? totalLotValue / currentHolding : null;
 
     pairs[pair] = {
@@ -209,13 +219,17 @@ export interface AnalyticsTxRow {
 export interface PeriodBucket {
   period: string;
   label: string;
+  /** Net currency flow from Exchange transactions (fiat received - fiat paid) */
   exchangePnl: Record<string, number>;
   revenue: Record<string, number>;
   volume: Record<string, number>;
   tradeCount: number;
 }
 
-export function buildPeriodBuckets(rows: AnalyticsTxRow[], bucket: "day" | "week" | "month" = "month"): PeriodBucket[] {
+export function buildPeriodBuckets(
+  rows: AnalyticsTxRow[],
+  bucket: "day" | "week" | "month" = "month"
+): PeriodBucket[] {
   const map = new Map<string, PeriodBucket>();
 
   function getPeriod(d: Date): { period: string; label: string } {
@@ -225,7 +239,10 @@ export function buildPeriodBuckets(rows: AnalyticsTxRow[], bucket: "day" | "week
     }
     if (bucket === "week") {
       const monday = new Date(d);
-      monday.setDate(d.getDate() - d.getDay() + 1);
+      const day = d.getDay(); // 0=Sun, 1=Mon … 6=Sat
+      // FIX: Sunday (day=0) needs -6, Monday (day=1) needs 0, etc.
+      const diff = day === 0 ? -6 : 1 - day;
+      monday.setDate(d.getDate() + diff);
       const p = monday.toISOString().slice(0, 10);
       return { period: p, label: `W ${p}` };
     }
@@ -249,6 +266,7 @@ export function buildPeriodBuckets(rows: AnalyticsTxRow[], bucket: "day" | "week
     const outCur = (row.outcomeCurrency ?? "").trim();
 
     if (txType === "Exchange") {
+      // Net flow per currency: +income, -outcome
       if (incCur) b.exchangePnl[incCur] = (b.exchangePnl[incCur] ?? 0) + incAmt;
       if (outCur) b.exchangePnl[outCur] = (b.exchangePnl[outCur] ?? 0) - outAmt;
       if (incCur) b.volume[incCur] = (b.volume[incCur] ?? 0) + incAmt;
@@ -275,9 +293,16 @@ export interface SpreadRow {
   totalVolume: number;
 }
 
-export function buildSpreadAnalysis(rows: AnalyticsTxRow[], fiatCurrencies?: Set<string>): SpreadRow[] {
-  const fiatSet = fiatCurrencies ?? FIAT_CURRENCIES;
-  const pairs = new Map<string, { buyVolume: number; buyFiatVolume: number; sellVolume: number; sellFiatVolume: number; buyCount: number; sellCount: number }>();
+export function buildSpreadAnalysis(
+  rows: AnalyticsTxRow[],
+  fiatCurrencies?: Set<string>
+): SpreadRow[] {
+  const fiatSet = fiatCurrencies ?? DEFAULT_FIAT;
+  const pairs = new Map<string, {
+    buyVolume: number; buyFiatVolume: number;
+    sellVolume: number; sellFiatVolume: number;
+    buyCount: number; sellCount: number;
+  }>();
 
   for (const row of rows) {
     if ((row.transactionType ?? "").trim() !== "Exchange") continue;
@@ -291,7 +316,7 @@ export function buildSpreadAnalysis(rows: AnalyticsTxRow[], fiatCurrencies?: Set
     const outFiat = fiatSet.has(outCur);
 
     if (outFiat && !incFiat) {
-      // BUY: got crypto, paid fiat
+      // BUY: received crypto, paid fiat
       const pair = `${incCur}/${outCur}`;
       if (!pairs.has(pair)) pairs.set(pair, { buyVolume: 0, buyFiatVolume: 0, sellVolume: 0, sellFiatVolume: 0, buyCount: 0, sellCount: 0 });
       const p = pairs.get(pair)!;
@@ -299,7 +324,7 @@ export function buildSpreadAnalysis(rows: AnalyticsTxRow[], fiatCurrencies?: Set
       p.buyFiatVolume += outAmt;
       p.buyCount++;
     } else if (incFiat && !outFiat) {
-      // SELL: gave crypto, got fiat
+      // SELL: gave crypto, received fiat
       const pair = `${outCur}/${incCur}`;
       if (!pairs.has(pair)) pairs.set(pair, { buyVolume: 0, buyFiatVolume: 0, sellVolume: 0, sellFiatVolume: 0, buyCount: 0, sellCount: 0 });
       const p = pairs.get(pair)!;
@@ -311,20 +336,14 @@ export function buildSpreadAnalysis(rows: AnalyticsTxRow[], fiatCurrencies?: Set
 
   return [...pairs.entries()].map(([pair, d]) => {
     const [base, quote] = pair.split("/");
-    const avgBuy = d.buyVolume > 0 ? d.buyFiatVolume / d.buyVolume : null;
+    const avgBuy  = d.buyVolume  > 0 ? d.buyFiatVolume  / d.buyVolume  : null;
     const avgSell = d.sellVolume > 0 ? d.sellFiatVolume / d.sellVolume : null;
-    const spread = avgBuy != null && avgSell != null ? avgSell - avgBuy : null;
+    const spread  = avgBuy != null && avgSell != null ? avgSell - avgBuy : null;
     const marginPct = spread != null && avgBuy ? (spread / avgBuy) * 100 : null;
     return {
-      pair,
-      baseCurrency: base,
-      quoteCurrency: quote,
-      buyCount: d.buyCount,
-      sellCount: d.sellCount,
-      avgBuy,
-      avgSell,
-      spread,
-      marginPct,
+      pair, baseCurrency: base, quoteCurrency: quote,
+      buyCount: d.buyCount, sellCount: d.sellCount,
+      avgBuy, avgSell, spread, marginPct,
       totalVolume: d.buyVolume + d.sellVolume,
     };
   }).sort((a, b) => b.totalVolume - a.totalVolume);
