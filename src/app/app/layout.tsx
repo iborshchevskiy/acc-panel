@@ -3,7 +3,7 @@ import { DM_Sans, IBM_Plex_Mono } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
 import Sidebar from "@/components/sidebar";
 import { db } from "@/db/client";
-import { organizationMembers } from "@/db/schema/system";
+import { organizationMembers, organizations } from "@/db/schema/system";
 import { eq } from "drizzle-orm";
 
 const dmSans = DM_Sans({
@@ -25,45 +25,41 @@ export default async function AppLayout({
   children: React.ReactNode;
   params: Promise<Record<string, string>>;
 }) {
-  void params; // satisfy Next.js layout signature
+  void params;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
-  if (!user) {
-    redirect("/login");
-  }
+  let orgName: string | undefined;
 
-  // Guard: redirect to onboarding if user has no org membership
-  // Wrapped in try/catch so missing DATABASE_URL doesn't crash during local dev setup
   try {
-    const memberships = await db
-      .select({ id: organizationMembers.id })
+    const [membership] = await db
+      .select({ id: organizationMembers.id, organizationId: organizationMembers.organizationId })
       .from(organizationMembers)
       .where(eq(organizationMembers.userId, user.id))
       .limit(1);
 
-    if (memberships.length === 0) {
-      redirect("/app/onboarding");
-    }
-  } catch {
-    // DB not configured yet — allow through so the app shell is visible
-  }
+    if (!membership) redirect("/app/onboarding");
 
-  const userEmail = user.email ?? "";
+    const [org] = await db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, membership.organizationId))
+      .limit(1);
+
+    orgName = org?.name;
+  } catch {
+    // DB not configured yet
+  }
 
   return (
     <div
       className={`${dmSans.variable} ${ibmPlexMono.variable} flex h-screen overflow-hidden font-[family-name:var(--font-dm-sans)]`}
       style={{ backgroundColor: "#0f1117" }}
     >
-      <Sidebar userEmail={userEmail} />
-      <main
-        className="flex flex-1 flex-col overflow-y-auto"
-        style={{ backgroundColor: "#0f1117" }}
-      >
+      <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
+      <main className="flex flex-1 flex-col overflow-y-auto" style={{ backgroundColor: "#0f1117" }}>
         {children}
       </main>
     </div>
