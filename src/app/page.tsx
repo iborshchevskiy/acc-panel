@@ -97,8 +97,7 @@ export default async function LandingPage() {
             <span className="font-[family-name:var(--font-syne)] text-sm font-bold tracking-tight" style={{ color: "var(--text-1)" }}>AccPanel</span>
           </div>
           <nav className="flex items-center gap-3">
-            <Link href="/login" className="text-sm px-4 py-1.5 rounded-md transition-colors" style={{ color: "var(--text-2)" }}
-              onMouseEnter={() => {}} >Sign in</Link>
+            <Link href="/login" className="text-sm px-4 py-1.5 rounded-md transition-colors" style={{ color: "var(--text-2)" }}>Sign in</Link>
             <Link href="/signup" className="text-sm px-4 py-1.5 rounded-md font-medium transition-colors"
               style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}>Get started</Link>
           </nav>
