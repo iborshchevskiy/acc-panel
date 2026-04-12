@@ -5,6 +5,7 @@ import { wallets, importTargets } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
 import { eq, and } from "drizzle-orm";
 import { addWallet, deleteWallet } from "./actions";
+import ImportButton from "@/components/import-button";
 
 const CHAIN_META: Record<string, { label: string; color: string; explorer: (a: string) => string }> = {
   TRON: {
@@ -125,9 +126,7 @@ export default async function WalletsPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Chain</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Address</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Label</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Txs</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Last sync</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500" colSpan={3}>Sync</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -166,16 +165,11 @@ export default async function WalletsPage() {
                     <td className="px-4 py-3 text-slate-400">
                       {row.label ?? <span className="text-slate-600">—</span>}
                     </td>
-                    <td className="px-4 py-3">
-                      <SyncBadge status={row.syncStatus ?? "idle"} />
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">
-                      {row.txCount ?? 0}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">
-                      {row.lastSyncAt
-                        ? new Date(row.lastSyncAt).toLocaleString()
-                        : "Never"}
+                    <td className="px-4 py-3" colSpan={3}>
+                      <ImportButton
+                        walletId={row.id}
+                        initialStatus={row.syncStatus ?? "idle"}
+                      />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <form action={deleteWallet.bind(null, row.id)}>
@@ -198,24 +192,3 @@ export default async function WalletsPage() {
   );
 }
 
-function SyncBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; color: string }> = {
-    idle: { label: "Idle", color: "#64748b" },
-    running: { label: "Syncing…", color: "#f59e0b" },
-    done: { label: "Done", color: "#10b981" },
-    error: { label: "Error", color: "#ef4444" },
-  };
-  const s = map[status] ?? map.idle;
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 text-xs"
-      style={{ color: s.color }}
-    >
-      <span
-        className="h-1.5 w-1.5 rounded-full"
-        style={{ backgroundColor: s.color }}
-      />
-      {s.label}
-    </span>
-  );
-}
