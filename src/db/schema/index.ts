@@ -4,3 +4,4 @@ export * from "./wallets";
 export * from "./transactions";
 export * from "./clients";
 export * from "./analytics";
+export * from "./capital";
