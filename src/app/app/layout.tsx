@@ -60,10 +60,10 @@ export default async function AppLayout({
   return (
     <div
       className={`${dmSans.variable} ${ibmPlexMono.variable} flex h-screen overflow-hidden font-[family-name:var(--font-dm-sans)]`}
-      style={{ backgroundColor: "#0f1117" }}
+      style={{ backgroundColor: "#07090c" }}
     >
       <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
-      <main className="flex flex-1 flex-col overflow-y-auto" style={{ backgroundColor: "#0f1117" }}>
+      <main className="flex flex-1 flex-col overflow-y-auto" style={{ backgroundColor: "#07090c" }}>
         {children}
       </main>
     </div>
