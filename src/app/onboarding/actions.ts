@@ -45,8 +45,6 @@ export async function createOrg(
 
   const userId = user.id;
 
-  let orgId: string;
-
   try {
     const [org] = await db
       .insert(organizations)
@@ -58,17 +56,14 @@ export async function createOrg(
       })
       .returning({ id: organizations.id });
 
-    orgId = org.id;
-
     await db.insert(organizationMembers).values({
-      organizationId: orgId,
+      organizationId: org.id,
       userId,
       role: "org_admin",
       acceptedAt: new Date(),
     });
   } catch (err: unknown) {
-    const msg =
-      err instanceof Error ? err.message : "Database error.";
+    const msg = err instanceof Error ? err.message : "Database error.";
     if (msg.includes("unique") || msg.includes("duplicate")) {
       return { error: "That slug is already taken. Choose another." };
     }
