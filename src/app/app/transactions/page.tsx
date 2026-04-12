@@ -2,11 +2,14 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
+import { clients, transactionClients } from "@/db/schema/clients";
 import { organizationMembers } from "@/db/schema/system";
 import { currencies, orgTransactionTypes } from "@/db/schema/wallets";
 import { eq, and, desc, ilike, or, sql, asc, inArray, isNull } from "drizzle-orm";
 import ManualTransactionForm from "./ManualTransactionForm";
+import EditTransactionForm from "./EditTransactionForm";
 import TransactionFilters from "./TransactionFilters";
+import ClientPicker, { type ClientOption } from "./ClientPicker";
 import { deleteTransaction } from "./actions";
 
 const PAGE_SIZE = 50;
@@ -21,7 +24,7 @@ const TX_TYPE_COLORS: Record<string, string> = {
 };
 
 interface PageProps {
-  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string; edit?: string }>;
 }
 
 export default async function TransactionsPage({ searchParams }: PageProps) {
@@ -30,6 +33,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const q = params.q ?? "";
   const typeFilter = params.type ?? "";
   const showForm = params.new === "1";
+  const editId = params.edit ?? "";
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -44,11 +48,19 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   if (!membership) redirect("/app/onboarding");
   const orgId = membership.organizationId;
 
-  const [orgTxTypes, orgCurrencies] = await Promise.all([
+  const [orgTxTypes, orgCurrencies, orgClients] = await Promise.all([
     db.select({ name: orgTransactionTypes.name }).from(orgTransactionTypes)
       .where(eq(orgTransactionTypes.organizationId, orgId)).orderBy(asc(orgTransactionTypes.name)),
     db.select({ code: currencies.code }).from(currencies)
       .where(eq(currencies.organizationId, orgId)).orderBy(asc(currencies.code)),
+    db.select({
+      id: clients.id,
+      name: clients.name,
+      surname: clients.surname,
+      tgUsername: clients.tgUsername,
+    }).from(clients)
+      .where(eq(clients.organizationId, orgId))
+      .orderBy(asc(clients.name)),
   ]);
 
   // Build where conditions — always exclude soft-deleted records
@@ -108,6 +120,26 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
     legsByTx.set(leg.transactionId, arr);
   }
 
+  // Fetch client assignments for this page
+  const txClientRows = txIds.length > 0
+    ? await db
+        .select({
+          transactionId: transactionClients.transactionId,
+          clientId: clients.id,
+          name: clients.name,
+          surname: clients.surname,
+          tgUsername: clients.tgUsername,
+        })
+        .from(transactionClients)
+        .innerJoin(clients, eq(clients.id, transactionClients.clientId))
+        .where(inArray(transactionClients.transactionId, txIds))
+    : [];
+
+  const clientByTx = new Map<string, ClientOption>();
+  for (const r of txClientRows) {
+    clientByTx.set(r.transactionId, { id: r.clientId, name: r.name, surname: r.surname, tgUsername: r.tgUsername });
+  }
+
   // Distinct transaction types for filter
   const typeRows = await db
     .selectDistinct({ t: transactions.transactionType })
@@ -115,6 +147,25 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
     .where(and(eq(transactions.organizationId, orgId), sql`${transactions.transactionType} IS NOT NULL`))
     .orderBy(transactions.transactionType);
   const txTypes = typeRows.map((r) => r.t).filter(Boolean) as string[];
+
+  // Build a stable "back" href that preserves active filters but strips edit/new
+  const filterQs = [
+    page > 1 ? `page=${page}` : "",
+    q ? `q=${encodeURIComponent(q)}` : "",
+    typeFilter ? `type=${encodeURIComponent(typeFilter)}` : "",
+  ].filter(Boolean).join("&");
+  const baseHref = `/app/transactions${filterQs ? `?${filterQs}` : ""}`;
+
+  // Find the tx being edited (must be on this page)
+  const editTx = editId ? rows.find((r) => r.id === editId) ?? null : null;
+  const editLegs = editTx
+    ? (legsByTx.get(editTx.id) ?? []).map((l) => ({
+        direction: l.direction as "in" | "out",
+        amount: l.amount ?? "",
+        currency: l.currency ?? "",
+        location: l.location ?? "",
+      })).filter((l) => l.direction === "in" || l.direction === "out")
+    : [];
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -125,7 +176,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
           <p className="text-sm text-slate-500">{count.toLocaleString()} total</p>
         </div>
         <a
-          href={showForm ? "/app/transactions" : "/app/transactions?new=1"}
+          href={showForm ? baseHref : `${baseHref}${filterQs ? "&" : "?"}new=1`}
           className="h-8 flex items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors"
           style={{ backgroundColor: showForm ? "transparent" : "var(--green-btn-bg)", color: showForm ? "var(--text-2)" : "var(--accent)", border: showForm ? "1px solid var(--inner-border)" : "1px solid var(--green-btn-border)" }}
         >
@@ -138,6 +189,23 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
         <ManualTransactionForm
           txTypes={orgTxTypes.map(t => t.name)}
           currencyCodes={orgCurrencies.map(c => c.code)}
+          clients={orgClients}
+        />
+      )}
+
+      {/* Edit form */}
+      {editTx && (
+        <EditTransactionForm
+          tx={{
+            id: editTx.id,
+            timestamp: editTx.timestamp.toISOString(),
+            transactionType: editTx.transactionType,
+            comment: editTx.comment,
+          }}
+          legs={editLegs}
+          txTypes={orgTxTypes.map(t => t.name)}
+          currencyCodes={orgCurrencies.map(c => c.code)}
+          cancelHref={baseHref}
         />
       )}
 
@@ -162,7 +230,8 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">In</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Out</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">TxID</th>
-                <th className="px-4 py-3 w-8" />
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Client</th>
+                <th className="px-4 py-3 w-16" />
               </tr>
             </thead>
             <tbody>
@@ -178,11 +247,14 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                   ? `https://tronscan.org/#/transaction/${tx.txHash}`
                   : null;
 
+                const isEditing = tx.id === editId;
+                const editHref = `${baseHref}${filterQs ? "&" : "?"}edit=${tx.id}`;
+
                 return (
                   <tr
                     key={tx.id}
                     style={{
-                      backgroundColor: "var(--surface)",
+                      backgroundColor: isEditing ? "var(--raised-hi)" : "var(--surface)",
                       borderBottom: isLast ? "none" : "1px solid var(--inner-border)",
                     }}
                   >
@@ -240,11 +312,28 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                         <span className="text-slate-700">manual</span>
                       )}
                     </td>
+                    <td className="px-4 py-3">
+                      <ClientPicker
+                        txId={tx.id}
+                        current={clientByTx.get(tx.id) ?? null}
+                        clients={orgClients}
+                      />
+                    </td>
                     <td className="px-4 py-3 text-right">
-                      <form action={deleteTransaction}>
-                        <input type="hidden" name="tx_id" value={tx.id} />
-                        <button type="submit" className="text-xs text-slate-700 hover:text-red-400 transition-colors">×</button>
-                      </form>
+                      <div className="flex items-center justify-end gap-2">
+                        <a
+                          href={isEditing ? baseHref : editHref}
+                          className="text-xs transition-colors"
+                          style={{ color: isEditing ? "var(--accent)" : "var(--text-3)" }}
+                          title={isEditing ? "Close editor" : "Edit transaction"}
+                        >
+                          {isEditing ? "✕" : "edit"}
+                        </a>
+                        <form action={deleteTransaction}>
+                          <input type="hidden" name="tx_id" value={tx.id} />
+                          <button type="submit" className="text-xs text-slate-700 hover:text-red-400 transition-colors">×</button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 );
