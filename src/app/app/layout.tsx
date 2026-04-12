@@ -41,7 +41,7 @@ export default async function AppLayout({
       .limit(1);
 
     if (!membership) {
-      redirect("/app/onboarding");
+      redirect("/onboarding");
     }
 
     const [org] = await db

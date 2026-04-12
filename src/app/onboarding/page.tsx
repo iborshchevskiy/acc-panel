@@ -62,7 +62,10 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center p-8">
+    <div
+      className="min-h-screen flex items-center justify-center p-8"
+      style={{ backgroundColor: "#0f1117" }}
+    >
       <div
         className="w-full max-w-md rounded-2xl border p-8"
         style={{ backgroundColor: "#161b26", borderColor: "#1e2432" }}
@@ -86,7 +89,6 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Org name */}
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-zinc-300">
               Organisation name
@@ -101,7 +103,6 @@ export default function OnboardingPage() {
             />
           </div>
 
-          {/* Slug */}
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-zinc-300">
               Slug
@@ -114,14 +115,11 @@ export default function OnboardingPage() {
               placeholder="my-trading-firm"
               pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
               title="Lowercase letters, numbers, and hyphens only"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/60 px-3.5 py-2.5 font-[family-name:var(--font-ibm-plex-mono)] text-sm text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/60 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
             />
-            <p className="text-xs text-zinc-500">
-              Lowercase letters, numbers, hyphens only.
-            </p>
+            <p className="text-xs text-zinc-500">Lowercase letters, numbers, hyphens only.</p>
           </div>
 
-          {/* Base currency */}
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-zinc-300">
               Base currency
@@ -151,7 +149,7 @@ export default function OnboardingPage() {
                 onChange={(e) => setCustomCurrency(e.target.value)}
                 placeholder="e.g. GBP"
                 maxLength={8}
-                className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-800/60 px-3.5 py-2.5 font-[family-name:var(--font-ibm-plex-mono)] text-sm text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-800/60 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
               />
             )}
           </div>
