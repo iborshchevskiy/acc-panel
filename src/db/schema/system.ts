@@ -28,7 +28,7 @@ export const organizations = pgTable("organizations", {
   baseCurrency: text("base_currency").default("USD").notNull(),
   timezone: text("timezone").default("UTC").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
-  createdBy: uuid("created_by").references(() => users.id),
+  createdBy: uuid("created_by"), // auth.users UUID — no FK to public.users
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
@@ -40,11 +40,9 @@ export const organizationMembers = pgTable("organization_members", {
   organizationId: uuid("organization_id")
     .references(() => organizations.id)
     .notNull(),
-  userId: uuid("user_id")
-    .references(() => users.id)
-    .notNull(),
+  userId: uuid("user_id").notNull(), // auth.users UUID — no FK to public.users
   role: text("role").notNull(), // 'org_admin' | 'accountant' | 'viewer'
-  invitedBy: uuid("invited_by").references(() => users.id),
+  invitedBy: uuid("invited_by"), // auth.users UUID — no FK to public.users
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
