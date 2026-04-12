@@ -8,6 +8,7 @@ export default defineConfig({
   out: "./src/db/migrations",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL!,
+    // Use direct connection for migrations (pooler doesn't support DDL)
+    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL!,
   },
 });

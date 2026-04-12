@@ -4,18 +4,25 @@ on:
   pull_request:
     branches: [main, dev]
   push:
-    branches: [main, dev]
+    branches: [main, dev, "feat/**"]
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+  SUPABASE_SERVICE_ROLE_KEY: placeholder
+  NEXT_PUBLIC_SITE_URL: http://localhost:3001
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/placeholder
 
 jobs:
-  check:
-    name: Typecheck + Lint + Test
+  ci:
+    name: Typecheck · Lint · Test · Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -29,3 +36,6 @@ jobs:
 
       - name: Unit tests
         run: npm run test -- --run
+
+      - name: Build
+        run: npm run build

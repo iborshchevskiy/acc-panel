@@ -1,146 +1,608 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
-import { organizations, organizationMembers } from "@/db/schema/system";
-import { currencies } from "@/db/schema/wallets";
-import { eq, asc } from "drizzle-orm";
-import { updateOrgSettings } from "./actions";
+import { organizations, organizationMembers, pendingInvites, auditLogs } from "@/db/schema/system";
+import { currencies, orgTransactionTypes } from "@/db/schema/wallets";
+import { eq, asc, desc, and, isNull, sql } from "drizzle-orm";
+import {
+  updateOrgSettings, inviteMember, cancelInvite, changeMemberRole, removeMember,
+  addCurrency, editCurrency, deleteCurrency,
+  addTransactionType, editTransactionType, deleteTransactionType,
+} from "./actions";
+
+interface PageProps { searchParams: Promise<{ tab?: string; auditPage?: string }> }
 
 const TIMEZONES = [
-  "UTC", "Europe/London", "Europe/Prague", "Europe/Warsaw",
-  "Europe/Kiev", "Europe/Moscow", "Asia/Dubai", "Asia/Bangkok",
-  "America/New_York", "America/Los_Angeles",
+  "UTC","Europe/London","Europe/Prague","Europe/Warsaw",
+  "Europe/Kiev","Europe/Moscow","Asia/Dubai","Asia/Bangkok",
+  "America/New_York","America/Los_Angeles",
 ];
+const ROLES = ["org_admin","accountant","viewer"] as const;
+const ROLE_LABEL: Record<string,string> = { org_admin:"Admin", accountant:"Accountant", viewer:"Viewer" };
+const ROLE_DESC: Record<string,string> = {
+  org_admin:  "Full access — manage members, settings, currencies, and all data.",
+  accountant: "Can import, create, and edit transactions. Cannot manage members or settings.",
+  viewer:     "Read-only access to all data. Cannot make any changes.",
+};
+const ROLE_COLOR: Record<string,{bg:string;fg:string}> = {
+  org_admin:  { bg:"var(--green-chip-bg)",  fg:"var(--accent)" },
+  accountant: { bg:"var(--blue-chip-bg)",  fg:"var(--blue)" },
+  viewer:     { bg:"var(--slate-chip-bg)", fg:"var(--text-5)" },
+};
+const ACTION_LABEL: Record<string,string> = {
+  org_settings_updated:"Updated org settings",
+  invite_sent:"Sent invite",
+  invite_cancelled:"Cancelled invite",
+  member_role_changed:"Changed role",
+  member_removed:"Removed member",
+  member_accepted_invite:"Joined via invite",
+};
 
-const TX_TYPES = [
-  "Exchange", "Revenue", "Expense", "Debt", "Transfer", "Fee",
-];
+const TABS = [
+  { id:"general",    label:"General",     icon:"⚙" },
+  { id:"members",    label:"Members",     icon:"◈" },
+  { id:"currencies", label:"Currencies",  icon:"◎" },
+  { id:"types",      label:"Tx Types",    icon:"◇" },
+  { id:"audit",      label:"Audit Log",   icon:"≡" },
+] as const;
+type TabId = typeof TABS[number]["id"];
 
-export default async function SettingsPage() {
+/* ── tiny shared primitives ───────────────────────────────────────────── */
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-xs font-medium tracking-widest uppercase mb-4"
+      style={{ color:"var(--text-3)", letterSpacing:"0.12em" }}>
+      {children}
+    </p>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs" style={{ color:"var(--text-4)" }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function UnderlineInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className={[
+        "bg-transparent border-b pb-1 text-sm outline-none transition-colors",
+        "text-slate-200 placeholder:text-slate-700",
+        "focus:border-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed",
+        props.className ?? "",
+      ].join(" ")}
+      style={{ borderColor:"var(--inner-border)", ...props.style }}
+    />
+  );
+}
+
+function UnderlineSelect(props: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
+  const { children, ...rest } = props;
+  return (
+    <select
+      {...rest}
+      className="bg-transparent border-b pb-1 text-sm text-slate-200 outline-none transition-colors focus:border-emerald-500 disabled:opacity-30"
+      style={{ borderColor:"var(--inner-border)" }}>
+      {children}
+    </select>
+  );
+}
+
+function Chip({ role }: { role: string }) {
+  const c = ROLE_COLOR[role] ?? ROLE_COLOR.viewer;
+  return (
+    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+      style={{ backgroundColor:c.bg, color:c.fg }}>
+      {ROLE_LABEL[role] ?? role}
+    </span>
+  );
+}
+
+function SaveBtn({ label = "Save" }: { label?: string }) {
+  return (
+    <button type="submit"
+      className="h-7 rounded px-3 text-xs font-medium transition-opacity hover:opacity-80 active:scale-95"
+      style={{ backgroundColor:"var(--green-btn-bg)", color:"var(--accent)", border:"1px solid var(--green-btn-border)" }}>
+      {label}
+    </button>
+  );
+}
+
+function GhostBtn({ label, danger }: { label: string; danger?: boolean }) {
+  return (
+    <button type="submit"
+      className={[
+        "text-xs transition-colors",
+        danger
+          ? "text-red-400/50 hover:text-red-400"
+          : "text-slate-500/50 hover:text-slate-400",
+      ].join(" ")}>
+      {label}
+    </button>
+  );
+}
+
+/* ── page ────────────────────────────────────────────────────────────── */
+
+export default async function SettingsPage({ searchParams }: PageProps) {
+  const { tab: tabParam, auditPage: auditPageParam } = await searchParams;
+  const activeTab: TabId = (TABS.find(t => t.id === tabParam)?.id ?? "general") as TabId;
+  const AUDIT_PAGE_SIZE = 100;
+  const auditPage = Math.max(1, parseInt(auditPageParam ?? "1", 10));
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [membership] = await db.select({ organizationId: organizationMembers.organizationId, role: organizationMembers.role })
+  const [membership] = await db
+    .select({ id: organizationMembers.id, organizationId: organizationMembers.organizationId, role: organizationMembers.role })
     .from(organizationMembers).where(eq(organizationMembers.userId, user.id)).limit(1);
-  if (!membership) redirect("/app/onboarding");
+  if (!membership) redirect("/onboarding");
 
-  const [org] = await db.select().from(organizations)
-    .where(eq(organizations.id, membership.organizationId)).limit(1);
-
-  const currencyRows = await db.select().from(currencies).orderBy(asc(currencies.type), asc(currencies.code));
-
+  const orgId = membership.organizationId;
   const isAdmin = membership.role === "org_admin";
 
+  const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+
+  type InviteRow  = typeof pendingInvites.$inferSelect;
+  type LogRow     = typeof auditLogs.$inferSelect;
+  type MemberRow  = { id:string; userId:string; email:string|null; role:string; acceptedAt:Date|null; createdAt:Date };
+
+  const [currencyRows, txTypes, members, invites, logs, [{ count: auditTotal }]] = await Promise.all([
+    db.select().from(currencies).where(eq(currencies.organizationId, orgId)).orderBy(asc(currencies.type), asc(currencies.code)),
+    db.select().from(orgTransactionTypes).where(eq(orgTransactionTypes.organizationId, orgId)).orderBy(asc(orgTransactionTypes.name)),
+    db.select({ id:organizationMembers.id, userId:organizationMembers.userId, email:organizationMembers.email, role:organizationMembers.role, acceptedAt:organizationMembers.acceptedAt, createdAt:organizationMembers.createdAt })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.isActive, true)))
+      .orderBy(asc(organizationMembers.createdAt)) as Promise<MemberRow[]>,
+    (isAdmin
+      ? db.select().from(pendingInvites).where(and(eq(pendingInvites.organizationId, orgId), isNull(pendingInvites.acceptedAt))).orderBy(desc(pendingInvites.createdAt))
+      : Promise.resolve([])) as Promise<InviteRow[]>,
+    db.select().from(auditLogs).where(eq(auditLogs.organizationId, orgId)).orderBy(desc(auditLogs.createdAt)).limit(AUDIT_PAGE_SIZE).offset((auditPage - 1) * AUDIT_PAGE_SIZE) as Promise<LogRow[]>,
+    db.select({ count: sql<number>`count(*)::int` }).from(auditLogs).where(eq(auditLogs.organizationId, orgId)),
+  ]);
+
+  const enrichedMembers = members.map(m => ({
+    ...m,
+    displayEmail: m.userId === user.id ? (user.email ?? m.userId) : (m.email ?? m.userId.slice(0,8)+"…"),
+    isSelf: m.userId === user.id,
+  }));
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3001";
+  const cryptoCurrencies = currencyRows.filter(c => c.type === "crypto");
+  const fiatCurrencies   = currencyRows.filter(c => c.type === "fiat");
+
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-100">Settings</h1>
-        <p className="text-sm text-slate-500">Organisation configuration</p>
-      </div>
+    <div className="flex h-full" style={{ backgroundColor:"var(--bg)" }}>
 
-      {/* Org settings */}
-      <div className="rounded-xl p-5" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
-        <h2 className="text-sm font-medium text-slate-300 mb-4">Organisation</h2>
-        <form action={updateOrgSettings} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-500">Organisation name</label>
-              <input name="name" defaultValue={org.name} required disabled={!isAdmin}
-                className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-40" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-500">Base currency</label>
-              <input name="base_currency" defaultValue={org.baseCurrency} required disabled={!isAdmin}
-                className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 uppercase outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-40" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-500">Timezone</label>
-              <select name="timezone" defaultValue={org.timezone} disabled={!isAdmin}
-                className="h-9 rounded-md px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-40"
-                style={{ backgroundColor: "#1e2432" }}>
-                {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-500">Org slug</label>
-              <input value={org.slug} readOnly
-                className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-600 font-mono outline-none cursor-not-allowed" />
+      {/* ── Left rail ───────────────────────────────────────────────── */}
+      <aside className="w-52 shrink-0 border-r flex flex-col pt-8 pb-6 px-4 sticky top-0 h-screen overflow-y-auto"
+        style={{ borderColor:"var(--surface-lo)", backgroundColor:"var(--bg)" }}>
+
+        <div className="mb-8 px-2">
+          <h1 className="text-sm font-semibold text-slate-200 tracking-tight">Settings</h1>
+          <p className="text-xs mt-0.5" style={{ color:"var(--text-3)" }}>{org.name}</p>
+        </div>
+
+        <nav className="flex flex-col gap-0.5">
+          {TABS.map((tab, idx) => {
+            const active = tab.id === activeTab;
+            return (
+              <a key={tab.id} href={`?tab=${tab.id}`}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all"
+                style={active
+                  ? { backgroundColor:"var(--green-alert-bg)", color:"var(--accent)", boxShadow:"inset 2px 0 0 var(--accent)" }
+                  : { color:"var(--text-3)" }}>
+                <span className="text-xs font-mono opacity-50">{String(idx+1).padStart(2,"0")}</span>
+                <span className="font-medium">{tab.label}</span>
+              </a>
+            );
+          })}
+        </nav>
+
+        {/* account card at bottom */}
+        <div className="mt-auto pt-6 px-2">
+          <div className="rounded-lg p-3" style={{ backgroundColor:"var(--surface)", border:"1px solid var(--surface-lo)" }}>
+            <p className="text-xs truncate" style={{ color:"var(--text-4)" }}>{user.email}</p>
+            <div className="mt-1.5">
+              <Chip role={membership.role} />
             </div>
           </div>
-          {isAdmin && (
-            <div className="flex justify-end">
-              <button type="submit" className="h-8 rounded-md px-4 text-sm font-medium"
-                style={{ backgroundColor: "#10b981", color: "#0d1117" }}>Save</button>
-            </div>
+        </div>
+      </aside>
+
+      {/* ── Main content ────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl px-10 py-10">
+
+          {/* ── GENERAL ───────────────────────────────────────── */}
+          {activeTab === "general" && (
+            <section>
+              <SectionLabel>Organisation</SectionLabel>
+              <form action={updateOrgSettings}>
+                <div className="grid grid-cols-2 gap-x-10 gap-y-7">
+                  <Field label="Organisation name">
+                    <UnderlineInput name="name" defaultValue={org.name} required disabled={!isAdmin} />
+                  </Field>
+                  <Field label="Base currency">
+                    <UnderlineInput name="base_currency" defaultValue={org.baseCurrency} required disabled={!isAdmin}
+                      className="uppercase" style={{ borderColor:"var(--inner-border)" }} />
+                  </Field>
+                  <Field label="Timezone">
+                    <UnderlineSelect name="timezone" defaultValue={org.timezone} disabled={!isAdmin}>
+                      {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
+                    </UnderlineSelect>
+                  </Field>
+                  <Field label="Slug (read-only)">
+                    <UnderlineInput value={org.slug} readOnly
+                      className="font-mono cursor-not-allowed opacity-30" />
+                  </Field>
+                </div>
+                {isAdmin && (
+                  <div className="mt-8 flex items-center gap-3">
+                    <SaveBtn label="Save changes" />
+                    <span className="text-xs" style={{ color:"var(--inner-border)" }}>Changes apply immediately</span>
+                  </div>
+                )}
+              </form>
+
+              {/* org meta */}
+              <div className="mt-12 pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
+                <SectionLabel>Organisation ID</SectionLabel>
+                <p className="text-xs font-mono" style={{ color:"var(--text-3)" }}>{orgId}</p>
+              </div>
+            </section>
           )}
-        </form>
-      </div>
 
-      {/* Transaction types reference */}
-      <div className="rounded-xl p-5" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
-        <h2 className="text-sm font-medium text-slate-300 mb-4">Transaction types</h2>
-        <div className="flex flex-wrap gap-2">
-          {TX_TYPES.map((t) => (
-            <span key={t} className="inline-flex items-center rounded px-2.5 py-1 text-xs font-medium"
-              style={{ backgroundColor: "#1e2432", color: "#94a3b8" }}>{t}</span>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-slate-600">
-          These types are used when tagging transactions. They drive filtering, debt tracking, FIFO analysis, and P&L bucketing.
-        </p>
-      </div>
+          {/* ── MEMBERS ───────────────────────────────────────── */}
+          {activeTab === "members" && (
+            <section>
+              <div className="flex items-baseline justify-between mb-6">
+                <SectionLabel>Team members</SectionLabel>
+                <span className="text-xs" style={{ color:"var(--inner-border)" }}>{enrichedMembers.length} active</span>
+              </div>
 
-      {/* Currencies */}
-      <div className="rounded-xl p-5" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
-        <h2 className="text-sm font-medium text-slate-300 mb-4">Currencies <span className="text-slate-600 font-normal">({currencyRows.length})</span></h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs text-slate-500 mb-2">Crypto</p>
-            <div className="flex flex-wrap gap-1.5">
-              {currencyRows.filter((c) => c.type === "crypto").map((c) => (
-                <span key={c.code} className="inline-flex items-center rounded px-2 py-0.5 text-xs font-mono"
-                  style={{ backgroundColor: "rgba(16,185,129,0.1)", color: "#10b981" }}>
-                  {c.code}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-2">Fiat</p>
-            <div className="flex flex-wrap gap-1.5">
-              {currencyRows.filter((c) => c.type === "fiat").map((c) => (
-                <span key={c.code} className="inline-flex items-center rounded px-2 py-0.5 text-xs font-mono"
-                  style={{ backgroundColor: "rgba(99,102,241,0.1)", color: "#6366f1" }}>
-                  {c.code}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+              {/* member rows */}
+              <div className="flex flex-col divide-y" style={{ borderColor:"var(--surface-lo)" }}>
+                {enrichedMembers.map(m => (
+                  <div key={m.id} className="flex items-center gap-4 py-3.5">
+                    {/* avatar stub */}
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                      style={{ backgroundColor:"var(--surface)", color:"var(--text-3)", border:"1px solid var(--surface-lo)" }}>
+                      {(m.displayEmail?.[0] ?? "?").toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-300 truncate">
+                        {m.displayEmail}
+                        {m.isSelf && <span className="ml-2 text-xs" style={{ color:"var(--text-3)" }}>you</span>}
+                      </p>
+                      <p className="text-xs" style={{ color:"var(--text-3)" }}>
+                        {(m.acceptedAt ?? m.createdAt) ? `Joined ${new Date((m.acceptedAt ?? m.createdAt)!).toLocaleDateString()}` : ""}
+                      </p>
+                    </div>
+                    <div className="shrink-0 flex flex-col items-end gap-0.5">
+                      {isAdmin && !m.isSelf ? (
+                        <form action={changeMemberRole} className="flex items-center gap-2">
+                          <input type="hidden" name="member_id" value={m.id} />
+                          <UnderlineSelect name="role" defaultValue={m.role} className="text-xs py-0"
+                            title={ROLE_DESC[m.role]}>
+                            {ROLES.map(r => <option key={r} value={r} title={ROLE_DESC[r]}>{ROLE_LABEL[r]}</option>)}
+                          </UnderlineSelect>
+                          <SaveBtn label="Apply" />
+                        </form>
+                      ) : (
+                        <Chip role={m.role} />
+                      )}
+                      <span className="text-xs max-w-[220px] text-right leading-snug" style={{ color:"var(--text-3)" }}>
+                        {ROLE_DESC[m.role]}
+                      </span>
+                    </div>
+                    {isAdmin && !m.isSelf && (
+                      <form action={removeMember}>
+                        <input type="hidden" name="member_id" value={m.id} />
+                        <GhostBtn label="Remove" danger />
+                      </form>
+                    )}
+                  </div>
+                ))}
+              </div>
 
-      {/* Account info */}
-      <div className="rounded-xl p-5" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
-        <h2 className="text-sm font-medium text-slate-300 mb-4">Account</h2>
-        <div className="flex flex-col gap-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-500">Email</span>
-            <span className="text-slate-300">{user.email}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">Role</span>
-            <span className="inline-flex items-center rounded px-2 py-0.5 text-xs"
-              style={{ backgroundColor: "rgba(16,185,129,0.1)", color: "#10b981" }}>
-              {membership.role}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">Org ID</span>
-            <span className="text-slate-600 font-mono text-xs">{membership.organizationId}</span>
-          </div>
+              {/* pending invites */}
+              {isAdmin && invites.length > 0 && (
+                <div className="mt-10">
+                  <SectionLabel>Pending invites</SectionLabel>
+                  <div className="flex flex-col gap-2">
+                    {invites.map(inv => (
+                      <div key={inv.id} className="flex items-center gap-4 px-4 py-3 rounded-lg"
+                        style={{ backgroundColor:"var(--surface)", border:"1px solid var(--surface-lo)" }}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-slate-400">{inv.email}</p>
+                          <p className="text-xs mt-0.5 font-mono truncate" style={{ color:"var(--inner-border)" }}>
+                            {`${siteUrl}/invite/${inv.token}`}
+                          </p>
+                        </div>
+                        <Chip role={inv.role} />
+                        <span className="text-xs shrink-0" style={{ color:"var(--text-3)" }}>
+                          exp. {new Date(inv.expiresAt).toLocaleDateString()}
+                        </span>
+                        <form action={cancelInvite}>
+                          <input type="hidden" name="invite_id" value={inv.id} />
+                          <GhostBtn label="Cancel" danger />
+                        </form>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* invite form */}
+              {isAdmin && (
+                <div className="mt-10 pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
+                  <SectionLabel>Invite member</SectionLabel>
+                  <form action={inviteMember} className="flex items-end gap-6">
+                    <Field label="Email address">
+                      <UnderlineInput name="email" type="email" placeholder="user@example.com" required className="w-64" />
+                    </Field>
+                    <Field label="Role">
+                      <UnderlineSelect name="role" defaultValue="accountant">
+                        {ROLES.map(r => <option key={r} value={r} title={ROLE_DESC[r]}>{ROLE_LABEL[r]}</option>)}
+                      </UnderlineSelect>
+                    </Field>
+                    <SaveBtn label="Send invite" />
+                  </form>
+                  <p className="mt-3 text-xs" style={{ color:"var(--inner-border)" }}>
+                    A shareable link will appear in pending invites. Valid 7 days.
+                  </p>
+                </div>
+              )}
+
+              {/* roles legend */}
+              <div className="mt-10 pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
+                <SectionLabel>Role permissions</SectionLabel>
+                <div className="flex flex-col gap-3">
+                  {ROLES.map(r => {
+                    const c = ROLE_COLOR[r];
+                    return (
+                      <div key={r} className="flex items-start gap-4">
+                        <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0 mt-0.5"
+                          style={{ backgroundColor:c.bg, color:c.fg }}>
+                          {ROLE_LABEL[r]}
+                        </span>
+                        <span className="text-xs leading-relaxed" style={{ color:"var(--text-4)" }}>
+                          {ROLE_DESC[r]}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ── CURRENCIES ────────────────────────────────────── */}
+          {activeTab === "currencies" && (
+            <section>
+              {/* crypto */}
+              <div className="mb-10">
+                <div className="flex items-baseline justify-between mb-4">
+                  <SectionLabel>Crypto</SectionLabel>
+                  <span className="text-xs" style={{ color:"var(--inner-border)" }}>{cryptoCurrencies.length}</span>
+                </div>
+                <div className="flex flex-col divide-y" style={{ borderColor:"var(--surface-lo)" }}>
+                  {cryptoCurrencies.map(c => (
+                    <div key={c.id} className="flex items-center gap-4 py-2.5">
+                      <span className="w-16 text-xs font-mono font-semibold" style={{ color:"var(--accent)" }}>{c.code}</span>
+                      {isAdmin ? (
+                        <form action={editCurrency} className="flex-1">
+                          <input type="hidden" name="currency_id" value={c.id} />
+                          <input type="hidden" name="type" value="crypto" />
+                          <UnderlineInput name="name" defaultValue={c.name ?? ""} placeholder="Display name"
+                            className="w-full text-xs" />
+                        </form>
+                      ) : (
+                        <span className="flex-1 text-xs" style={{ color:"var(--text-3)" }}>{c.name ?? "—"}</span>
+                      )}
+                      {isAdmin && (
+                        <form action={deleteCurrency}>
+                          <input type="hidden" name="currency_id" value={c.id} />
+                          <GhostBtn label="×" danger />
+                        </form>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* fiat */}
+              <div className="mb-10 pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
+                <div className="flex items-baseline justify-between mb-4">
+                  <SectionLabel>Fiat</SectionLabel>
+                  <span className="text-xs" style={{ color:"var(--inner-border)" }}>{fiatCurrencies.length}</span>
+                </div>
+                <div className="flex flex-col divide-y" style={{ borderColor:"var(--surface-lo)" }}>
+                  {fiatCurrencies.map(c => (
+                    <div key={c.id} className="flex items-center gap-4 py-2.5">
+                      <span className="w-16 text-xs font-mono font-semibold" style={{ color:"var(--indigo)" }}>{c.code}</span>
+                      {isAdmin ? (
+                        <form action={editCurrency} className="flex-1">
+                          <input type="hidden" name="currency_id" value={c.id} />
+                          <input type="hidden" name="type" value="fiat" />
+                          <UnderlineInput name="name" defaultValue={c.name ?? ""} placeholder="Display name"
+                            className="w-full text-xs" />
+                        </form>
+                      ) : (
+                        <span className="flex-1 text-xs" style={{ color:"var(--text-3)" }}>{c.name ?? "—"}</span>
+                      )}
+                      {isAdmin && (
+                        <form action={deleteCurrency}>
+                          <input type="hidden" name="currency_id" value={c.id} />
+                          <GhostBtn label="×" danger />
+                        </form>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* add form */}
+              {isAdmin && (
+                <div className="pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
+                  <SectionLabel>Add currency</SectionLabel>
+                  <form action={addCurrency} className="flex items-end gap-6">
+                    <Field label="Code">
+                      <UnderlineInput name="code" placeholder="USDT" required maxLength={20}
+                        className="w-20 uppercase" />
+                    </Field>
+                    <Field label="Name (optional)">
+                      <UnderlineInput name="name" placeholder="Tether USD" className="w-48" />
+                    </Field>
+                    <Field label="Type">
+                      <UnderlineSelect name="type" defaultValue="crypto">
+                        <option value="crypto">crypto</option>
+                        <option value="fiat">fiat</option>
+                      </UnderlineSelect>
+                    </Field>
+                    <SaveBtn label="Add" />
+                  </form>
+                  <p className="mt-3 text-xs" style={{ color:"var(--inner-border)" }}>
+                    Currencies are also auto-added during blockchain and CSV imports.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ── TRANSACTION TYPES ─────────────────────────────── */}
+          {activeTab === "types" && (
+            <section>
+              <div className="flex items-baseline justify-between mb-6">
+                <SectionLabel>Transaction types</SectionLabel>
+                <span className="text-xs" style={{ color:"var(--inner-border)" }}>{txTypes.length} defined</span>
+              </div>
+
+              <div className="flex flex-col divide-y" style={{ borderColor:"var(--surface-lo)" }}>
+                {txTypes.map(t => (
+                  <div key={t.id} className="flex items-center gap-4 py-3">
+                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor:"var(--text-3)" }} />
+                    {isAdmin ? (
+                      <form action={editTransactionType} className="flex items-center gap-3 flex-1">
+                        <input type="hidden" name="type_id" value={t.id} />
+                        <UnderlineInput name="name" defaultValue={t.name} required maxLength={50} className="flex-1 text-sm" />
+                        <SaveBtn label="Rename" />
+                      </form>
+                    ) : (
+                      <span className="flex-1 text-sm text-slate-300">{t.name}</span>
+                    )}
+                    {isAdmin && (
+                      <form action={deleteTransactionType}>
+                        <input type="hidden" name="type_id" value={t.id} />
+                        <GhostBtn label="Delete" danger />
+                      </form>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {isAdmin && (
+                <div className="mt-10 pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
+                  <SectionLabel>New type</SectionLabel>
+                  <form action={addTransactionType} className="flex items-end gap-4">
+                    <Field label="Type name">
+                      <UnderlineInput name="name" placeholder="e.g. Staking" required maxLength={50} className="w-56" />
+                    </Field>
+                    <SaveBtn label="Add type" />
+                  </form>
+                  <p className="mt-3 text-xs" style={{ color:"var(--inner-border)" }}>
+                    Used to tag transactions for filtering, FIFO analysis, and P&L bucketing.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ── AUDIT LOG ─────────────────────────────────────── */}
+          {activeTab === "audit" && (() => {
+            const auditTotalPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE));
+            return (
+            <section>
+              <div className="flex items-baseline justify-between mb-6">
+                <SectionLabel>Activity log</SectionLabel>
+                <span className="text-xs" style={{ color:"var(--inner-border)" }}>{auditTotal.toLocaleString()} total events</span>
+              </div>
+
+              {logs.length === 0 ? (
+                <p className="text-xs" style={{ color:"var(--text-3)" }}>No activity recorded yet.</p>
+              ) : (
+                <div className="flex flex-col">
+                  {logs.map((log, i) => {
+                    let details: Record<string,string> = {};
+                    try { details = JSON.parse(log.details ?? "{}"); } catch { /* */ }
+                    const isLast = i === logs.length - 1;
+                    return (
+                      <div key={log.id} className="flex gap-4">
+                        {/* timeline */}
+                        <div className="flex flex-col items-center">
+                          <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
+                            style={{ backgroundColor:"var(--inner-border)" }} />
+                          {!isLast && <div className="w-px flex-1 mt-1" style={{ backgroundColor:"var(--surface-lo)" }} />}
+                        </div>
+                        <div className="pb-5 flex-1 min-w-0">
+                          <div className="flex items-baseline gap-3 flex-wrap">
+                            <span className="text-xs font-medium text-slate-400">
+                              {ACTION_LABEL[log.action] ?? log.action}
+                            </span>
+                            {Object.entries(details).length > 0 && (
+                              <span className="text-xs font-mono" style={{ color:"var(--text-3)" }}>
+                                {Object.entries(details).map(([k,v]) => `${k}=${v}`).join(" ")}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="text-xs" style={{ color:"var(--text-3)" }}>
+                              {log.userEmail ?? (log.userId ? log.userId.slice(0,8)+"…" : "—")}
+                            </span>
+                            <span className="text-xs font-mono" style={{ color:"var(--inner-border)" }}>
+                              {new Date(log.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {/* Audit pagination */}
+              {auditTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-6 pt-4 border-t" style={{ borderColor:"var(--surface-lo)" }}>
+                  <span className="text-xs" style={{ color:"var(--text-3)" }}>
+                    Page {auditPage} of {auditTotalPages}
+                  </span>
+                  <div className="flex gap-1">
+                    {auditPage > 1 && (
+                      <a href={`?tab=audit&auditPage=${auditPage - 1}`}
+                        className="h-7 px-3 flex items-center rounded text-xs transition-colors"
+                        style={{ color:"var(--text-4)" }}>← Prev</a>
+                    )}
+                    {auditPage < auditTotalPages && (
+                      <a href={`?tab=audit&auditPage=${auditPage + 1}`}
+                        className="h-7 px-3 flex items-center rounded text-xs transition-colors"
+                        style={{ color:"var(--text-4)" }}>Next →</a>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+            );
+          })()}
+
         </div>
-      </div>
+      </main>
     </div>
   );
 }

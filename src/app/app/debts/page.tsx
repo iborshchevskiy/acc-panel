@@ -54,7 +54,7 @@ export default async function DebtsPage() {
           <p className="text-sm text-slate-500">Debt positions per client</p>
         </div>
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl py-16"
-          style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+          style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
           <span className="text-slate-500 text-sm">No debt transactions found</span>
           <span className="text-slate-600 text-xs">Tag transactions as "Debt" type and assign to a client</span>
         </div>
@@ -108,10 +108,10 @@ export default async function DebtsPage() {
   const openCount = sorted.filter((p) => Object.values(p.balances).some((v) => Math.abs(v) >= 0.001)).length;
 
   function ageBadge(days: number) {
-    if (days > 90) return { label: "Overdue", color: "#ef4444" };
-    if (days > 30) return { label: "Aging", color: "#f59e0b" };
-    if (days > 7) return { label: "Recent", color: "#6366f1" };
-    return { label: "Fresh", color: "#10b981" };
+    if (days > 90) return { label: "Overdue", color: "var(--red)" };
+    if (days > 30) return { label: "Aging", color: "var(--amber)" };
+    if (days > 7) return { label: "Recent", color: "var(--indigo)" };
+    return { label: "Fresh", color: "var(--accent)" };
   }
 
   return (
@@ -121,10 +121,10 @@ export default async function DebtsPage() {
         <p className="text-sm text-slate-500">{openCount} open · {sorted.length} total clients</p>
       </div>
 
-      <div className="overflow-hidden rounded-xl" style={{ border: "1px solid #1e2432" }}>
+      <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
         <table className="w-full text-sm">
           <thead>
-            <tr style={{ backgroundColor: "#161b27", borderBottom: "1px solid #1e2432" }}>
+            <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Client</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Net Balance</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Since</th>
@@ -138,7 +138,7 @@ export default async function DebtsPage() {
               const isSettled = openBalances.length === 0;
               const badge = ageBadge(pos.ageDays);
               return (
-                <tr key={pos.clientId} style={{ backgroundColor: "#0d1117", borderBottom: i < sorted.length - 1 ? "1px solid #1e2432" : "none" }}>
+                <tr key={pos.clientId} style={{ backgroundColor: "var(--surface)", borderBottom: i < sorted.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
                   <td className="px-4 py-3 font-medium text-slate-200">{pos.clientName}</td>
                   <td className="px-4 py-3">
                     {isSettled ? (
@@ -147,7 +147,7 @@ export default async function DebtsPage() {
                       <div className="flex flex-col gap-0.5">
                         {openBalances.map(([cur, net]) => (
                           <span key={cur} className="text-xs font-mono"
-                            style={{ color: net > 0 ? "#10b981" : "#ef4444" }}>
+                            style={{ color: net > 0 ? "var(--accent)" : "var(--red)" }}>
                             {net > 0 ? "+" : ""}{net.toLocaleString(undefined, { maximumFractionDigits: 2 })} {cur}
                             <span className="ml-1 text-slate-600 font-sans">
                               {net > 0 ? "(they owe us)" : "(we owe them)"}

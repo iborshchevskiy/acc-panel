@@ -5,20 +5,35 @@ import {
   boolean,
   timestamp,
   integer,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./system";
 
-// ── Currencies ────────────────────────────────────────────────────────────────
+// ── Currencies (per-org) ──────────────────────────────────────────────────────
 
 export const currencies = pgTable("currencies", {
   id: uuid("id").primaryKey().defaultRandom(),
-  code: text("code").unique().notNull(), // USDT, TRX, EUR, USD …
+  organizationId: uuid("organization_id").references(() => organizations.id), // nullable for migration
+  code: text("code").notNull(),
   name: text("name"),
   type: text("type").notNull(), // 'crypto' | 'fiat'
   decimals: integer("decimals").default(8),
   coingeckoId: text("coingecko_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  uniqueIndex("currencies_org_code_unique").on(t.organizationId, t.code),
+]);
+
+// ── Org Transaction Types ─────────────────────────────────────────────────────
+
+export const orgTransactionTypes = pgTable("org_transaction_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("org_tx_types_unique").on(t.organizationId, t.name),
+]);
 
 // ── Wallets ───────────────────────────────────────────────────────────────────
 

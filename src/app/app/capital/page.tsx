@@ -43,11 +43,11 @@ export default async function CapitalPage() {
       {investors.length > 0 && (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {investors.map(([investor, balances]) => (
-            <div key={investor} className="rounded-xl p-4" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+            <div key={investor} className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
               <p className="text-xs text-slate-500 truncate">{investor}</p>
               {[...balances.entries()].map(([cur, net]) => (
                 <p key={cur} className="mt-1 text-lg font-semibold font-mono"
-                  style={{ color: net >= 0 ? "#10b981" : "#ef4444" }}>
+                  style={{ color: net >= 0 ? "var(--accent)" : "var(--red)" }}>
                   {net >= 0 ? "+" : ""}{net.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   <span className="ml-1 text-xs font-normal text-slate-500">{cur}</span>
                 </p>
@@ -60,7 +60,7 @@ export default async function CapitalPage() {
 
       {/* Add form */}
       <form action={addCashOperation} className="flex flex-wrap gap-3 rounded-xl p-4"
-        style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+        style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
         <input type="date" name="date" defaultValue={today} required
           className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500" style={{ colorScheme: "dark" }} />
         <input name="investor" required placeholder="Investor name"
@@ -70,27 +70,27 @@ export default async function CapitalPage() {
         <input name="currency" defaultValue="USDT" placeholder="Currency"
           className="h-9 w-24 rounded-md bg-white/5 px-3 text-sm text-slate-200 uppercase outline-none focus:ring-1 focus:ring-emerald-500" />
         <select name="type" className="h-9 rounded-md px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500"
-          style={{ backgroundColor: "#1e2432" }}>
+          style={{ backgroundColor: "var(--inner-border)" }}>
           <option value="deposit">Deposit</option>
           <option value="withdrawal">Withdrawal</option>
         </select>
         <input name="comment" placeholder="Comment (optional)"
           className="h-9 flex-1 min-w-40 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
         <button type="submit" className="h-9 rounded-md px-4 text-sm font-medium"
-          style={{ backgroundColor: "#10b981", color: "#0d1117" }}>Add</button>
+          style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}>Add</button>
       </form>
 
       {/* Ledger */}
       {rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl py-16"
-          style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+          style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
           <span className="text-slate-500 text-sm">No capital entries yet</span>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl" style={{ border: "1px solid #1e2432" }}>
+        <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ backgroundColor: "#161b27", borderBottom: "1px solid #1e2432" }}>
+              <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Investor</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Type</th>
@@ -101,19 +101,19 @@ export default async function CapitalPage() {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={r.id} style={{ backgroundColor: "#0d1117", borderBottom: i < rows.length - 1 ? "1px solid #1e2432" : "none" }}>
+                <tr key={r.id} style={{ backgroundColor: "var(--surface)", borderBottom: i < rows.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
                   <td className="px-4 py-2.5 text-xs text-slate-400">{new Date(r.date).toLocaleDateString()}</td>
                   <td className="px-4 py-2.5 text-sm text-slate-200">{r.investor}</td>
                   <td className="px-4 py-2.5">
                     <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
                       style={r.type === "deposit"
-                        ? { backgroundColor: "rgba(16,185,129,0.12)", color: "#10b981" }
-                        : { backgroundColor: "rgba(239,68,68,0.12)", color: "#ef4444" }}>
+                        ? { backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }
+                        : { backgroundColor: "var(--red-chip-bg)", color: "var(--red)" }}>
                       {r.type}
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-sm font-mono text-right"
-                    style={{ color: r.type === "deposit" ? "#10b981" : "#ef4444" }}>
+                    style={{ color: r.type === "deposit" ? "var(--accent)" : "var(--red)" }}>
                     {r.type === "deposit" ? "+" : "-"}{parseFloat(r.amount as string).toLocaleString(undefined, { maximumFractionDigits: 2 })} {r.currency}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-500">{r.comment || <span className="text-slate-700">—</span>}</td>

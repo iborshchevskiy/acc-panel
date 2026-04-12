@@ -28,12 +28,12 @@ export default async function DataPage() {
       </div>
 
       {/* Export */}
-      <div className="rounded-xl p-5" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+      <div className="rounded-xl p-5" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
         <h2 className="text-sm font-medium text-slate-300 mb-4">Export</h2>
         <div className="flex flex-wrap gap-3">
           <a href="/api/export?format=csv"
             className="h-9 flex items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors"
-            style={{ backgroundColor: "rgba(16,185,129,0.12)", color: "#10b981" }}>
+            style={{ backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
@@ -41,7 +41,7 @@ export default async function DataPage() {
           </a>
           <a href="/api/export?format=json"
             className="h-9 flex items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors"
-            style={{ backgroundColor: "rgba(99,102,241,0.12)", color: "#6366f1" }}>
+            style={{ backgroundColor: "var(--indigo-chip-bg)", color: "var(--indigo)" }}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
@@ -54,7 +54,7 @@ export default async function DataPage() {
       </div>
 
       {/* Import */}
-      <div className="rounded-xl p-5" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+      <div className="rounded-xl p-5" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
         <h2 className="text-sm font-medium text-slate-300 mb-4">Import</h2>
         <DataImport />
       </div>

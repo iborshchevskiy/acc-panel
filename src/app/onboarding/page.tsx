@@ -64,16 +64,16 @@ export default function OnboardingPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center p-8"
-      style={{ backgroundColor: "#0f1117" }}
+      style={{ backgroundColor: "var(--surface)" }}
     >
       <div
         className="w-full max-w-md rounded-2xl border p-8"
-        style={{ backgroundColor: "#161b26", borderColor: "#1e2432" }}
+        style={{ backgroundColor: "#161b26", borderColor: "var(--inner-border)" }}
       >
         <div className="mb-6 flex items-center gap-2.5">
           <span
             className="flex h-8 w-8 items-center justify-center rounded-md text-sm font-bold"
-            style={{ backgroundColor: "#10b981", color: "#0d1117" }}
+            style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
           >
             ₿
           </span>
@@ -158,7 +158,7 @@ export default function OnboardingPage() {
             type="submit"
             disabled={isPending}
             className="w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-zinc-900 transition hover:opacity-90 disabled:opacity-50"
-            style={{ backgroundColor: "#10b981" }}
+            style={{ backgroundColor: "var(--accent)" }}
           >
             {isPending ? "Creating…" : "Create organisation"}
           </button>

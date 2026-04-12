@@ -4,6 +4,8 @@ import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { organizationMembers } from "@/db/schema/system";
 import { eq, and } from "drizzle-orm";
+import { ensureCurrency } from "@/lib/currencies";
+import { isRateLimited } from "@/lib/rate-limit";
 
 interface CsvRow {
   Date: string;
@@ -49,15 +51,31 @@ export async function POST(req: NextRequest) {
   if (!membership) return NextResponse.json({ error: "No org" }, { status: 403 });
   const orgId = membership.organizationId;
 
+  // 10 uploads per minute per user
+  if (isRateLimited(`csv-import:${user.id}`, 10, 60_000)) {
+    return NextResponse.json({ error: "Too many requests. Try again in a minute." }, { status: 429 });
+  }
+
   let rows: CsvRow[];
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
     if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
+    const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json({ error: "File too large. Maximum size is 10 MB." }, { status: 413 });
+    }
+
+    const isJson = file.name.endsWith(".json") || file.type === "application/json";
+    const isCsv = file.name.endsWith(".csv") || file.type === "text/csv" || file.type === "text/plain";
+    if (!isJson && !isCsv) {
+      return NextResponse.json({ error: "Invalid file type. Only .csv and .json are accepted." }, { status: 415 });
+    }
+
     const text = await file.text();
 
-    if (file.name.endsWith(".json")) {
+    if (isJson) {
       rows = JSON.parse(text) as CsvRow[];
     } else {
       rows = parseCsv(text);
@@ -98,12 +116,15 @@ export async function POST(req: NextRequest) {
 
       if (row["Income Amount"] && row["Income Currency"]) {
         await db.insert(transactionLegs).values({ transactionId: tx.id, direction: "in", amount: row["Income Amount"], currency: row["Income Currency"] });
+        await ensureCurrency(orgId, row["Income Currency"]);
       }
       if (row["Outcome Amount"] && row["Outcome Currency"]) {
         await db.insert(transactionLegs).values({ transactionId: tx.id, direction: "out", amount: row["Outcome Amount"], currency: row["Outcome Currency"] });
+        await ensureCurrency(orgId, row["Outcome Currency"]);
       }
       if (row["Fee"] && row["Fee Currency"]) {
         await db.insert(transactionLegs).values({ transactionId: tx.id, direction: "fee", amount: row["Fee"], currency: row["Fee Currency"] });
+        await ensureCurrency(orgId, row["Fee Currency"]);
       }
 
       inserted++;

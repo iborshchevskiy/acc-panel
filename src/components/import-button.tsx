@@ -10,10 +10,10 @@ interface Status {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  idle: "#64748b",
-  running: "#f59e0b",
-  done: "#10b981",
-  error: "#ef4444",
+  idle: "var(--text-2)",
+  running: "var(--amber)",
+  done: "var(--accent)",
+  error: "var(--red)",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -59,7 +59,7 @@ export default function ImportButton({ walletId, initialStatus }: { walletId: st
     setLoading(false);
   }
 
-  const color = STATUS_COLORS[status.syncStatus] ?? "#64748b";
+  const color = STATUS_COLORS[status.syncStatus] ?? "var(--text-2)";
   const label = STATUS_LABELS[status.syncStatus] ?? status.syncStatus;
 
   return (
@@ -75,7 +75,7 @@ export default function ImportButton({ walletId, initialStatus }: { walletId: st
         onClick={startImport}
         disabled={loading || status.syncStatus === "running"}
         className="h-7 rounded px-2.5 text-xs font-medium transition-colors disabled:opacity-40"
-        style={{ backgroundColor: "rgba(16,185,129,0.12)", color: "#10b981" }}
+        style={{ backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }}
       >
         {status.syncStatus === "running" ? "Syncing…" : "Import"}
       </button>

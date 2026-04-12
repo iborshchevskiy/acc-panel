@@ -163,19 +163,19 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   return (
     <aside
       className="flex w-56 shrink-0 flex-col"
-      style={{ backgroundColor: "#07090c", borderRight: "1px solid #1a2433" }}
+      style={{ backgroundColor: "var(--bg)", borderRight: "1px solid var(--border)" }}
     >
       {/* Logo / org */}
-      <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: "1px solid #1a2433" }}>
+      <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-bold"
-          style={{ backgroundColor: "#10b981", color: "#0d1117" }}>
+          style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}>
           ₿
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold leading-tight" style={{ color: "#e2e8f0" }}>
+          <p className="truncate text-sm font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
             {orgName ?? "AccPanel"}
           </p>
-          {orgName && <p className="text-[10px] leading-tight" style={{ color: "#334155" }}>organisation</p>}
+          {orgName && <p className="text-[10px] leading-tight" style={{ color: "var(--text-3)" }}>organisation</p>}
         </div>
       </div>
 
@@ -191,14 +191,14 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
               href={item.href}
               className="flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium transition-all duration-150"
               style={isActive ? {
-                backgroundColor: "rgba(16,185,129,0.10)",
-                color: "#10b981",
-                boxShadow: "inset 2px 0 0 #10b981",
+                backgroundColor: "var(--accent-lo)",
+                color: "var(--accent)",
+                boxShadow: "inset 2px 0 0 var(--accent)",
               } : {
-                color: "#475569",
+                color: "var(--text-4)",
               }}
             >
-              <span style={{ color: isActive ? "#10b981" : "#334155", transition: "color 0.15s" }}>
+              <span style={{ color: isActive ? "var(--accent)" : "var(--text-3)", transition: "color 0.15s" }}>
                 {item.icon}
               </span>
               {item.label}
@@ -208,21 +208,21 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="px-3 pb-3 pt-2" style={{ borderTop: "1px solid #1a2433", marginTop: "8px" }}>
-        <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: "#0d1117", border: "1px solid #1a2433" }}>
+      <div className="px-3 pb-3 pt-2" style={{ borderTop: "1px solid var(--border)", marginTop: "8px" }}>
+        <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
           <div className="flex items-center justify-between mb-2">
-            <span className="max-w-[118px] truncate text-xs" style={{ color: "#475569" }}>{userEmail}</span>
+            <span className="max-w-[118px] truncate text-xs" style={{ color: "var(--text-4)" }}>{userEmail}</span>
             <button
               onClick={toggleTheme}
               className="flex h-6 w-6 items-center justify-center rounded transition-colors"
-              style={{ color: "#334155" }}
+              style={{ color: "var(--text-3)" }}
               title={theme === "dark" ? "Switch to light" : "Switch to dark"}
             >
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}
             </button>
           </div>
           <form action="/api/auth/signout" method="POST">
-            <button type="submit" className="text-xs transition-colors" style={{ color: "#334155" }}>
+            <button type="submit" className="text-xs transition-colors" style={{ color: "var(--text-3)" }}>
               Sign out →
             </button>
           </form>

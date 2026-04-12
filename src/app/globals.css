@@ -2,20 +2,92 @@
 
 /* ── Base tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --bg:       #07090c;
-  --surface:  #0d1117;
-  --raised:   #131920;
-  --border:   #1a2433;
-  --border-hi:#243040;
-  --accent:   #10b981;
-  --accent-lo:rgba(16,185,129,0.10);
-  --accent-md:rgba(16,185,129,0.18);
-  --text-1:   #e2e8f0;
-  --text-2:   #64748b;
-  --text-3:   #334155;
-  --red:      #f87171;
-  --blue:     #60a5fa;
-  --amber:    #fbbf24;
+  color-scheme: dark;
+  /* Backgrounds */
+  --bg:            #07090c;
+  --surface:       #0d1117;
+  --surface-lo:    #0f1823;
+  --raised:        #131920;
+  --raised-hi:     #161b27;
+  /* Borders */
+  --border:        #1a2433;
+  --inner-border:  #1e2432;
+  --border-hi:     #243040;
+  /* Accent */
+  --accent:        #10b981;
+  --accent-lo:     rgba(16,185,129,0.10);
+  --accent-md:     rgba(16,185,129,0.18);
+  /* Text */
+  --text-1:        #e2e8f0;
+  --text-2:        #64748b;
+  --text-3:        #334155;
+  --text-4:        #475569;
+  --text-5:        #94a3b8;
+  /* Signal */
+  --red:           #f87171;
+  --blue:          #60a5fa;
+  --indigo:        #6366f1;
+  --violet:        #8b5cf6;
+  --amber:         #fbbf24;
+  /* Semantic rgba patterns */
+  --green-btn-bg:      rgba(16,185,129,.15);
+  --green-btn-border:  rgba(16,185,129,.25);
+  --green-alert-bg:    rgba(16,185,129,.08);
+  --green-alert-border:rgba(16,185,129,.2);
+  --green-chip-bg:     rgba(16,185,129,.12);
+  --red-alert-bg:      rgba(239,68,68,.08);
+  --red-alert-border:  rgba(239,68,68,.2);
+  --red-chip-bg:       rgba(239,68,68,.12);
+  --blue-chip-bg:      rgba(96,165,250,.12);
+  --slate-chip-bg:     rgba(148,163,184,.12);
+  --indigo-chip-bg:    rgba(99,102,241,.12);
+  --green-border-lo:   rgba(16,185,129,.3);
+  --red-border-lo:     rgba(239,68,68,.3);
+}
+
+/* ── Light theme ─────────────────────────────────────────────────────────── */
+html.light {
+  color-scheme: light;
+  /* Backgrounds — layered warm white */
+  --bg:            #f4f7fb;
+  --surface:       #ffffff;
+  --surface-lo:    #f8fafc;
+  --raised:        #f0f4f9;
+  --raised-hi:     #e8eef6;
+  /* Borders — visible but not harsh */
+  --border:        #dce3ed;
+  --inner-border:  #c8d3e0;
+  --border-hi:     #aab5c5;
+  /* Accent — deeper emerald for white-bg contrast (WCAG AA) */
+  --accent:        #047857;
+  --accent-lo:     rgba(4,120,87,0.08);
+  --accent-md:     rgba(4,120,87,0.14);
+  /* Text — high-contrast hierarchy */
+  --text-1:        #0d1520;   /* near-black navy */
+  --text-2:        #374151;   /* readable secondary */
+  --text-3:        #64748b;   /* muted but legible (4.6:1 on white) */
+  --text-4:        #4b5563;   /* form labels */
+  --text-5:        #6b7280;   /* timestamps, captions */
+  /* Signal colors — darkened for light-bg contrast */
+  --red:           #b91c1c;
+  --blue:          #1d4ed8;
+  --indigo:        #4338ca;
+  --violet:        #6d28d9;
+  --amber:         #b45309;
+  /* Semantic rgba */
+  --green-btn-bg:      rgba(4,120,87,.09);
+  --green-btn-border:  rgba(4,120,87,.28);
+  --green-alert-bg:    rgba(4,120,87,.06);
+  --green-alert-border:rgba(4,120,87,.22);
+  --green-chip-bg:     rgba(4,120,87,.09);
+  --red-alert-bg:      rgba(185,28,28,.05);
+  --red-alert-border:  rgba(185,28,28,.18);
+  --red-chip-bg:       rgba(185,28,28,.08);
+  --blue-chip-bg:      rgba(29,78,216,.08);
+  --slate-chip-bg:     rgba(75,85,99,.08);
+  --indigo-chip-bg:    rgba(67,56,202,.08);
+  --green-border-lo:   rgba(4,120,87,.3);
+  --red-border-lo:     rgba(185,28,28,.3);
 }
 
 /* ── Smooth everything ───────────────────────────────────────────────────── */
@@ -84,4 +156,61 @@ body {
   color: var(--text-1);
   font-family: var(--font-dm-sans, "DM Sans", system-ui, sans-serif);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ── Light mode: Tailwind text color overrides ───────────────────────────── */
+/* Tailwind's slate-* classes are hardcoded—they don't follow CSS vars.       */
+/* We remap them in light mode so every usage stays readable.                 */
+html.light .text-slate-100,
+html.light .text-slate-200 { color: var(--text-1); }
+html.light .text-slate-300 { color: var(--text-2); }
+html.light .text-slate-400 { color: var(--text-3); }
+html.light .text-slate-500 { color: var(--text-3); }
+
+/* Bright accent/signal classes — darkened for white-bg legibility */
+html.light .text-emerald-400,
+html.light .text-emerald-300,
+html.light .text-emerald-500 { color: var(--accent); }
+html.light .text-red-400     { color: var(--red); }
+
+/* Placeholder text */
+html.light .placeholder\:text-slate-600::placeholder,
+html.light .placeholder\:text-slate-700::placeholder { color: var(--text-3); }
+
+/* Hover state overrides */
+html.light .hover\:text-red-400:hover     { color: var(--red); }
+html.light .hover\:text-emerald-400:hover,
+html.light .hover\:text-emerald-300:hover { color: var(--accent); }
+html.light .hover\:text-slate-300:hover   { color: var(--text-2); }
+html.light .hover\:text-slate-400:hover   { color: var(--text-3); }
+
+/* ── Light mode: structural polish ──────────────────────────────────────── */
+/* Cards and surfaces get a crisp shadow instead of dark borders */
+html.light input,
+html.light select,
+html.light textarea {
+  color: var(--text-1);
+}
+
+/* Sidebar and panel backgrounds need a subtle left border/shadow instead of
+   a near-invisible dark border in light mode */
+html.light aside {
+  box-shadow: 1px 0 0 0 var(--border);
+}
+
+/* Table headers in light mode — slightly tinted */
+html.light thead tr,
+html.light tr[data-header] {
+  background: var(--raised) !important;
+}
+
+/* Focus rings */
+html.light *:focus-visible {
+  outline-color: var(--accent);
+}
+
+/* Input placeholder in both modes */
+input::placeholder, textarea::placeholder {
+  color: var(--text-3);
+  opacity: 1;
 }

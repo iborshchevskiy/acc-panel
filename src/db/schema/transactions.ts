@@ -32,12 +32,17 @@ export const transactions = pgTable(
     isMatched: boolean("is_matched").default(false).notNull(),
     raw: jsonb("raw"), // original CSV row preserved verbatim
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }), // soft delete — never hard-delete financial records
   },
   (t) => [
     index("transactions_org_idx").on(t.organizationId),
     index("transactions_timestamp_idx").on(t.timestamp),
     index("transactions_tx_hash_idx").on(t.txHash),
     index("transactions_location_idx").on(t.location),
+    // Composite: most common query pattern (org + time desc)
+    index("transactions_org_ts_idx").on(t.organizationId, t.timestamp),
+    // Composite: type filter (org + type)
+    index("transactions_org_type_idx").on(t.organizationId, t.transactionType),
   ]
 );
 
@@ -53,11 +58,14 @@ export const transactionLegs = pgTable(
     direction: text("direction").notNull(), // 'in' | 'out' | 'fee'
     amount: numeric("amount", { precision: 28, scale: 10 }),
     currency: text("currency"),
+    location: text("location"), // wallet address or named account for this leg
     walletId: uuid("wallet_id").references(() => wallets.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     index("legs_transaction_idx").on(t.transactionId),
     index("legs_currency_idx").on(t.currency),
+    // Composite: fetch legs by tx + direction in one index scan
+    index("legs_tx_dir_idx").on(t.transactionId, t.direction),
   ]
 );

@@ -9,7 +9,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4"
-      style={{ backgroundColor: "#0f1117" }}>
+      style={{ backgroundColor: "var(--surface)" }}>
       <p className="font-[family-name:var(--font-ibm-plex-mono)] text-6xl font-medium text-slate-700">500</p>
       <p className="text-slate-400">Something went wrong</p>
       {error.message && (
@@ -17,7 +17,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
       )}
       <button onClick={reset}
         className="mt-2 h-8 flex items-center rounded-md px-4 text-sm font-medium"
-        style={{ backgroundColor: "rgba(16,185,129,0.12)", color: "#10b981" }}>
+        style={{ backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }}>
         Try again
       </button>
     </div>

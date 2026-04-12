@@ -80,7 +80,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
       {/* Edit form */}
       <form action={updateClient.bind(null, id)}
         className="grid grid-cols-2 gap-3 rounded-xl p-4"
-        style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+        style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
         <div className="flex flex-col gap-1">
           <label className="text-xs text-slate-500">Name</label>
           <input name="name" defaultValue={client.name} required className="h-8 rounded-md bg-white/5 px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500" />
@@ -99,7 +99,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
         </div>
         <div className="col-span-2 flex justify-end">
           <button type="submit" className="h-8 rounded-md px-4 text-sm font-medium"
-            style={{ backgroundColor: "#10b981", color: "#0d1117" }}>Save</button>
+            style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}>Save</button>
         </div>
       </form>
 
@@ -109,20 +109,20 @@ export default async function ClientDetailPage({ params }: PageProps) {
         <form action={addClientWallet.bind(null, id)} className="flex gap-2">
           <input name="address" placeholder="Wallet address" required
             className="h-8 flex-1 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
-          <select name="chain" className="h-8 rounded-md px-2 text-sm text-slate-200 outline-none" style={{ backgroundColor: "#1e2432" }}>
+          <select name="chain" className="h-8 rounded-md px-2 text-sm text-slate-200 outline-none" style={{ backgroundColor: "var(--inner-border)" }}>
             <option value="TRON">TRON</option>
             <option value="ETH">ETH</option>
             <option value="BNB">BNB</option>
             <option value="SOL">SOL</option>
           </select>
           <button type="submit" className="h-8 rounded-md px-3 text-sm font-medium"
-            style={{ backgroundColor: "rgba(16,185,129,0.12)", color: "#10b981" }}>Add</button>
+            style={{ backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }}>Add</button>
         </form>
         {walletRows.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {walletRows.map((w) => (
               <div key={w.id} className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs"
-                style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+                style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
                 <span className="font-mono text-slate-400">{w.address.slice(0, 8)}…{w.address.slice(-4)}</span>
                 <span className="text-slate-600">{w.chain}</span>
                 <form action={removeClientWallet.bind(null, w.id, id)}>
@@ -142,10 +142,10 @@ export default async function ClientDetailPage({ params }: PageProps) {
         {txRows.length === 0 ? (
           <p className="text-sm text-slate-600">No transactions assigned to this client.</p>
         ) : (
-          <div className="overflow-hidden rounded-xl" style={{ border: "1px solid #1e2432" }}>
+          <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
             <table className="w-full text-sm">
               <thead>
-                <tr style={{ backgroundColor: "#161b27", borderBottom: "1px solid #1e2432" }}>
+                <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Type</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">In</th>
@@ -159,7 +159,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
                   const inLeg = txLegs.find((l) => l.direction === "in");
                   const outLeg = txLegs.find((l) => l.direction === "out");
                   return (
-                    <tr key={tx.id} style={{ backgroundColor: "#0d1117", borderBottom: i < txRows.length - 1 ? "1px solid #1e2432" : "none" }}>
+                    <tr key={tx.id} style={{ backgroundColor: "var(--surface)", borderBottom: i < txRows.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
                       <td className="px-4 py-2.5 text-xs text-slate-400">
                         {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
                       </td>
@@ -171,7 +171,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
                         {outLeg ? <span className="text-red-400">-{Number(outLeg.amount).toLocaleString()} {outLeg.currency}</span> : <span className="text-slate-700">—</span>}
                       </td>
                       <td className="px-4 py-2.5 text-xs">
-                        <span style={{ color: tx.isMatched ? "#10b981" : "#64748b" }}>
+                        <span style={{ color: tx.isMatched ? "var(--accent)" : "var(--text-2)" }}>
                           {tx.isMatched ? "✓" : "—"}
                         </span>
                       </td>

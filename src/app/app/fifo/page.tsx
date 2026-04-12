@@ -4,7 +4,7 @@ import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { runFifo, type FifoTxRow } from "@/lib/fifo/engine";
 
 export default async function FifoPage() {
@@ -16,9 +16,12 @@ export default async function FifoPage() {
     .from(organizationMembers).where(eq(organizationMembers.userId, user.id)).limit(1);
   if (!membership) redirect("/app/onboarding");
 
-  const fiatRows = await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.type, "fiat"));
+  const fiatRows = await db.select({ code: currencies.code }).from(currencies)
+    .where(and(eq(currencies.organizationId, membership.organizationId), eq(currencies.type, "fiat")));
   const fiatSet = new Set(fiatRows.map((r) => r.code));
 
+  // Filter to Exchange-only at DB level — FIFO only processes this type
+  // This dramatically reduces memory usage for orgs with large transaction sets
   const txRows = await db
     .select({
       id: transactions.id,
@@ -26,19 +29,20 @@ export default async function FifoPage() {
       transactionType: transactions.transactionType,
     })
     .from(transactions)
-    .where(eq(transactions.organizationId, membership.organizationId))
+    .where(and(eq(transactions.organizationId, membership.organizationId), eq(transactions.transactionType, "Exchange")))
     .orderBy(transactions.timestamp);
 
-  const legs = await db
-    .select({
-      transactionId: transactionLegs.transactionId,
-      direction: transactionLegs.direction,
-      amount: transactionLegs.amount,
-      currency: transactionLegs.currency,
-    })
-    .from(transactionLegs)
-    .innerJoin(transactions, eq(transactions.id, transactionLegs.transactionId))
-    .where(eq(transactions.organizationId, membership.organizationId));
+  const legs = txRows.length > 0
+    ? await db
+        .select({
+          transactionId: transactionLegs.transactionId,
+          direction: transactionLegs.direction,
+          amount: transactionLegs.amount,
+          currency: transactionLegs.currency,
+        })
+        .from(transactionLegs)
+        .where(inArray(transactionLegs.transactionId, txRows.map((r) => r.id)))
+    : [];
 
   const legsByTx = new Map<string, typeof legs>();
   for (const leg of legs) {
@@ -76,22 +80,22 @@ export default async function FifoPage() {
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-xl p-4" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
           <p className="text-xs text-slate-500">Total Realized Gain</p>
           <p className="mt-1 text-xl font-semibold font-mono"
-            style={{ color: totalRealizedGain >= 0 ? "#10b981" : "#ef4444" }}>
+            style={{ color: totalRealizedGain >= 0 ? "var(--accent)" : "var(--red)" }}>
             {totalRealizedGain >= 0 ? "+" : ""}{totalRealizedGain.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </p>
           <p className="text-xs text-slate-600">{gainCurrencies.join(", ") || "—"}</p>
         </div>
-        <div className="rounded-xl p-4" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
           <p className="text-xs text-slate-500">Open Positions</p>
           <p className="mt-1 text-xl font-semibold text-slate-100">
             {result.summary.filter((s) => s.currentHolding > 1e-9).length}
           </p>
           <p className="text-xs text-slate-600">pairs with remaining lots</p>
         </div>
-        <div className="rounded-xl p-4" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
           <p className="text-xs text-slate-500">Pairs Analyzed</p>
           <p className="mt-1 text-xl font-semibold text-slate-100">{result.summary.length}</p>
           <p className="text-xs text-slate-600">crypto/fiat pairs</p>
@@ -101,19 +105,19 @@ export default async function FifoPage() {
       {/* Summary table */}
       {result.summary.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl py-16"
-          style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
+          style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
           <span className="text-slate-500 text-sm">No Exchange transactions with crypto/fiat pairs found</span>
           <span className="text-slate-600 text-xs">FIFO requires buy/sell transactions tagged as Exchange type</span>
         </div>
       ) : (
         <>
-          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #1e2432" }}>
-            <div className="px-4 py-3" style={{ backgroundColor: "#161b27", borderBottom: "1px solid #1e2432" }}>
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
+            <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
               <h2 className="text-sm font-medium text-slate-300">Summary by pair</h2>
             </div>
             <table className="w-full text-sm">
               <thead>
-                <tr style={{ backgroundColor: "#0f1117", borderBottom: "1px solid #1e2432" }}>
+                <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Holding</th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Avg Cost</th>
@@ -123,7 +127,7 @@ export default async function FifoPage() {
               </thead>
               <tbody>
                 {result.summary.map((s, i) => (
-                  <tr key={s.pair} style={{ backgroundColor: "#0d1117", borderBottom: i < result.summary.length - 1 ? "1px solid #1e2432" : "none" }}>
+                  <tr key={s.pair} style={{ backgroundColor: "var(--surface)", borderBottom: i < result.summary.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
                     <td className="px-4 py-2.5 text-xs font-mono text-slate-300">{s.pair}</td>
                     <td className="px-4 py-2.5 text-xs font-mono text-right text-slate-400">
                       {s.currentHolding > 1e-9
@@ -136,7 +140,7 @@ export default async function FifoPage() {
                         : <span className="text-slate-700">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs font-mono text-right">
-                      <span style={{ color: s.totalRealizedGain >= 0 ? "#10b981" : "#ef4444" }}>
+                      <span style={{ color: s.totalRealizedGain >= 0 ? "var(--accent)" : "var(--red)" }}>
                         {s.totalRealizedGain >= 0 ? "+" : ""}
                         {s.totalRealizedGain.toLocaleString(undefined, { maximumFractionDigits: 2 })} {s.gainCurrency}
                       </span>
@@ -150,13 +154,13 @@ export default async function FifoPage() {
 
           {/* Open lots detail */}
           {Object.values(result.pairs).some((p) => p.lots.length > 0) && (
-            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #1e2432" }}>
-              <div className="px-4 py-3" style={{ backgroundColor: "#161b27", borderBottom: "1px solid #1e2432" }}>
+            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
+              <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <h2 className="text-sm font-medium text-slate-300">Open lots</h2>
               </div>
               <table className="w-full text-sm">
                 <thead>
-                  <tr style={{ backgroundColor: "#0f1117", borderBottom: "1px solid #1e2432" }}>
+                  <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Acquired</th>
                     <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Remaining</th>
@@ -169,7 +173,7 @@ export default async function FifoPage() {
                     p.lots
                       .filter((l) => l.remainingAmount > 1e-9)
                       .map((lot, i) => (
-                        <tr key={`${p.pair}-${i}`} style={{ backgroundColor: "#0d1117", borderBottom: "1px solid #1e2432" }}>
+                        <tr key={`${p.pair}-${i}`} style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                           <td className="px-4 py-2.5 text-xs font-mono text-slate-300">{p.pair}</td>
                           <td className="px-4 py-2.5 text-xs text-slate-500">
                             {lot.acquiredAt.toISOString().slice(0, 10)}

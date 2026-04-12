@@ -3,21 +3,25 @@ import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, and, desc, ilike, or, sql } from "drizzle-orm";
+import { currencies, orgTransactionTypes } from "@/db/schema/wallets";
+import { eq, and, desc, ilike, or, sql, asc, inArray, isNull } from "drizzle-orm";
+import ManualTransactionForm from "./ManualTransactionForm";
+import TransactionFilters from "./TransactionFilters";
+import { deleteTransaction } from "./actions";
 
 const PAGE_SIZE = 50;
 
 const TX_TYPE_COLORS: Record<string, string> = {
-  Exchange: "#6366f1",
-  Revenue: "#10b981",
-  Expense: "#ef4444",
-  Debt: "#f59e0b",
-  Transfer: "#64748b",
-  Fee: "#8b5cf6",
+  Exchange: "var(--indigo)",
+  Revenue: "var(--accent)",
+  Expense: "var(--red)",
+  Debt: "var(--amber)",
+  Transfer: "var(--text-2)",
+  Fee: "var(--violet)",
 };
 
 interface PageProps {
-  searchParams: Promise<{ page?: string; q?: string; type?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string }>;
 }
 
 export default async function TransactionsPage({ searchParams }: PageProps) {
@@ -25,6 +29,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(params.page ?? "1", 10));
   const q = params.q ?? "";
   const typeFilter = params.type ?? "";
+  const showForm = params.new === "1";
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -39,17 +44,32 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   if (!membership) redirect("/app/onboarding");
   const orgId = membership.organizationId;
 
-  // Build where conditions
-  const conditions = [eq(transactions.organizationId, orgId)];
+  const [orgTxTypes, orgCurrencies] = await Promise.all([
+    db.select({ name: orgTransactionTypes.name }).from(orgTransactionTypes)
+      .where(eq(orgTransactionTypes.organizationId, orgId)).orderBy(asc(orgTransactionTypes.name)),
+    db.select({ code: currencies.code }).from(currencies)
+      .where(eq(currencies.organizationId, orgId)).orderBy(asc(currencies.code)),
+  ]);
+
+  // Build where conditions — always exclude soft-deleted records
+  const conditions = [eq(transactions.organizationId, orgId), isNull(transactions.deletedAt)];
   if (typeFilter) conditions.push(eq(transactions.transactionType, typeFilter));
   if (q) {
+    const p = `%${q}%`;
+    // Search both transaction fields AND leg fields (currency, wallet address)
+    // EXISTS subquery avoids duplicate rows that a JOIN would produce
     conditions.push(
       or(
-        ilike(transactions.txHash, `%${q}%`),
-        ilike(transactions.location, `%${q}%`),
-        ilike(transactions.comment, `%${q}%`),
-        ilike(transactions.fromAddress, `%${q}%`),
-        ilike(transactions.toAddress, `%${q}%`)
+        ilike(transactions.txHash, p),
+        ilike(transactions.location, p),
+        ilike(transactions.comment, p),
+        ilike(transactions.fromAddress, p),
+        ilike(transactions.toAddress, p),
+        sql`EXISTS (
+          SELECT 1 FROM transaction_legs tl
+          WHERE tl.transaction_id = ${transactions.id}
+            AND (tl.location ILIKE ${p} OR tl.currency ILIKE ${p})
+        )`
       )!
     );
   }
@@ -78,10 +98,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const txIds = rows.map((r) => r.id);
   const legs =
     txIds.length > 0
-      ? await db
-          .select()
-          .from(transactionLegs)
-          .where(sql`${transactionLegs.transactionId} = ANY(${sql.raw(`ARRAY[${txIds.map((id) => `'${id}'`).join(",")}]::uuid[]`)})`)
+      ? await db.select().from(transactionLegs).where(inArray(transactionLegs.transactionId, txIds))
       : [];
 
   const legsByTx = new Map<string, typeof legs>();
@@ -107,59 +124,45 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
           <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
           <p className="text-sm text-slate-500">{count.toLocaleString()} total</p>
         </div>
+        <a
+          href={showForm ? "/app/transactions" : "/app/transactions?new=1"}
+          className="h-8 flex items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors"
+          style={{ backgroundColor: showForm ? "transparent" : "var(--green-btn-bg)", color: showForm ? "var(--text-2)" : "var(--accent)", border: showForm ? "1px solid var(--inner-border)" : "1px solid var(--green-btn-border)" }}
+        >
+          {showForm ? "Cancel" : "+ New"}
+        </a>
       </div>
 
-      {/* Filters */}
-      <form method="GET" className="flex flex-wrap gap-2">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search TxID, address, comment…"
-          className="h-8 flex-1 min-w-56 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500"
+      {/* Manual entry form */}
+      {showForm && (
+        <ManualTransactionForm
+          txTypes={orgTxTypes.map(t => t.name)}
+          currencyCodes={orgCurrencies.map(c => c.code)}
         />
-        <select
-          name="type"
-          defaultValue={typeFilter}
-          className="h-8 rounded-md px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500"
-          style={{ backgroundColor: "#1e2432" }}
-        >
-          <option value="">All types</option>
-          {txTypes.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="h-8 rounded-md px-3 text-sm font-medium text-slate-300 transition-colors hover:bg-white/5"
-        >
-          Filter
-        </button>
-        {(q || typeFilter) && (
-          <a href="/app/transactions" className="h-8 flex items-center rounded-md px-3 text-sm text-slate-500 hover:text-slate-300 transition-colors">
-            Clear
-          </a>
-        )}
-      </form>
+      )}
+
+      {/* Filters */}
+      <TransactionFilters q={q} typeFilter={typeFilter} txTypes={txTypes} />
 
       {/* Table */}
       {rows.length === 0 ? (
         <div
           className="flex flex-col items-center justify-center gap-2 rounded-xl py-16"
-          style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}
+          style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}
         >
           <span className="text-slate-500 text-sm">No transactions found</span>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl" style={{ border: "1px solid #1e2432" }}>
+        <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ backgroundColor: "#161b27", borderBottom: "1px solid #1e2432" }}>
+              <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Type</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">In</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Out</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Location</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">TxID</th>
+                <th className="px-4 py-3 w-8" />
               </tr>
             </thead>
             <tbody>
@@ -169,8 +172,8 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                 const outLeg = txLegs.find((l) => l.direction === "out");
                 const isLast = i === rows.length - 1;
                 const typeColor = tx.transactionType
-                  ? (TX_TYPE_COLORS[tx.transactionType] ?? "#64748b")
-                  : "#64748b";
+                  ? (TX_TYPE_COLORS[tx.transactionType] ?? "var(--text-2)")
+                  : "var(--text-2)";
                 const explorerUrl = tx.txHash
                   ? `https://tronscan.org/#/transaction/${tx.txHash}`
                   : null;
@@ -179,8 +182,8 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                   <tr
                     key={tx.id}
                     style={{
-                      backgroundColor: "#0d1117",
-                      borderBottom: isLast ? "none" : "1px solid #1e2432",
+                      backgroundColor: "var(--surface)",
+                      borderBottom: isLast ? "none" : "1px solid var(--inner-border)",
                     }}
                   >
                     <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
@@ -200,26 +203,27 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                     </td>
                     <td className="px-4 py-3 text-xs font-mono">
                       {inLeg ? (
-                        <span className="text-emerald-400">
-                          +{Number(inLeg.amount).toLocaleString()} {inLeg.currency}
-                        </span>
+                        <div>
+                          <span className="text-emerald-400">+{Number(inLeg.amount).toLocaleString()} {inLeg.currency}</span>
+                          {inLeg.location && (
+                            <div className="text-slate-600 text-xs mt-0.5">{inLeg.location.length > 14 ? `${inLeg.location.slice(0, 6)}…${inLeg.location.slice(-4)}` : inLeg.location}</div>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-slate-700">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs font-mono">
                       {outLeg ? (
-                        <span className="text-red-400">
-                          -{Number(outLeg.amount).toLocaleString()} {outLeg.currency}
-                        </span>
+                        <div>
+                          <span className="text-red-400">-{Number(outLeg.amount).toLocaleString()} {outLeg.currency}</span>
+                          {outLeg.location && (
+                            <div className="text-slate-600 text-xs mt-0.5">{outLeg.location.length > 14 ? `${outLeg.location.slice(0, 6)}…${outLeg.location.slice(-4)}` : outLeg.location}</div>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-slate-700">—</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-500">
-                      {tx.location
-                        ? `${tx.location.slice(0, 6)}…${tx.location.slice(-4)}`
-                        : <span className="text-slate-700">—</span>}
                     </td>
                     <td className="px-4 py-3 text-xs font-mono text-slate-600">
                       {explorerUrl && tx.txHash ? (
@@ -235,6 +239,12 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                       ) : (
                         <span className="text-slate-700">manual</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <form action={deleteTransaction}>
+                        <input type="hidden" name="tx_id" value={tx.id} />
+                        <button type="submit" className="text-xs text-slate-700 hover:text-red-400 transition-colors">×</button>
+                      </form>
                     </td>
                   </tr>
                 );

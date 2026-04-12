@@ -5,6 +5,7 @@ import { organizationMembers } from "@/db/schema/system";
 import { wallets } from "@/db/schema/wallets";
 import { eq, and } from "drizzle-orm";
 import { runImport } from "@/lib/import/engine";
+import { isRateLimited } from "@/lib/rate-limit";
 
 export async function POST(
   _req: NextRequest,
@@ -22,6 +23,11 @@ export async function POST(
     .where(eq(organizationMembers.userId, user.id))
     .limit(1);
   if (!membership) return NextResponse.json({ error: "No org" }, { status: 403 });
+
+  // 5 imports per minute per user (blockchain fetches are expensive)
+  if (isRateLimited(`blockchain-import:${user.id}`, 5, 60_000)) {
+    return NextResponse.json({ error: "Too many requests. Try again in a minute." }, { status: 429 });
+  }
 
   // Verify wallet belongs to org
   const [wallet] = await db

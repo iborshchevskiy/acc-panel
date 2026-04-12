@@ -39,7 +39,7 @@ export default function DataImport() {
     <div className="flex flex-col gap-4">
       <form onSubmit={handleSubmit} className="flex items-center gap-3">
         <label className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors"
-          style={{ backgroundColor: "#1e2432", color: "#94a3b8" }}>
+          style={{ backgroundColor: "var(--inner-border)", color: "var(--text-5)" }}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M7 9V1M4 4l3-3 3 3M2 11h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
@@ -49,13 +49,13 @@ export default function DataImport() {
         </label>
         <button type="submit" disabled={state === "uploading"}
           className="h-9 rounded-md px-4 text-sm font-medium disabled:opacity-40 transition-colors"
-          style={{ backgroundColor: "#10b981", color: "#0d1117" }}>
+          style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}>
           {state === "uploading" ? "Importing…" : "Import"}
         </button>
       </form>
 
       {state === "done" && result && (
-        <div className="rounded-md px-4 py-3 text-sm" style={{ backgroundColor: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
+        <div className="rounded-md px-4 py-3 text-sm" style={{ backgroundColor: "var(--green-alert-bg)", border: "1px solid var(--green-alert-border)" }}>
           <span className="text-emerald-400">✓ Import complete</span>
           <span className="ml-2 text-slate-500">
             {result.inserted} inserted · {result.skipped} skipped · {result.errors} errors
@@ -63,7 +63,7 @@ export default function DataImport() {
         </div>
       )}
       {state === "error" && result && (
-        <div className="rounded-md px-4 py-3 text-sm" style={{ backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+        <div className="rounded-md px-4 py-3 text-sm" style={{ backgroundColor: "var(--red-alert-bg)", border: "1px solid var(--red-alert-border)" }}>
           <span className="text-red-400">✗ Import failed</span>
           {result.message && <span className="ml-2 text-slate-500">{result.message}</span>}
         </div>

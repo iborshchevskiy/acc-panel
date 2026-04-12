@@ -10,22 +10,22 @@ import ImportButton from "@/components/import-button";
 const CHAIN_META: Record<string, { label: string; color: string; explorer: (a: string) => string }> = {
   TRON: {
     label: "TRON",
-    color: "#ef4444",
+    color: "var(--red)",
     explorer: (a) => `https://tronscan.org/#/address/${a}`,
   },
   ETH: {
     label: "Ethereum",
-    color: "#6366f1",
+    color: "var(--indigo)",
     explorer: (a) => `https://etherscan.io/address/${a}`,
   },
   BNB: {
     label: "BNB Chain",
-    color: "#f59e0b",
+    color: "var(--amber)",
     explorer: (a) => `https://bscscan.com/address/${a}`,
   },
   SOL: {
     label: "Solana",
-    color: "#10b981",
+    color: "var(--accent)",
     explorer: (a) => `https://solscan.io/account/${a}`,
   },
 };
@@ -72,7 +72,7 @@ export default async function WalletsPage() {
       <form
         action={addWallet}
         className="flex flex-wrap gap-3 rounded-xl p-4"
-        style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}
+        style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}
       >
         <input
           name="address"
@@ -90,7 +90,7 @@ export default async function WalletsPage() {
           required
           defaultValue="TRON"
           className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500"
-          style={{ backgroundColor: "#1e2432" }}
+          style={{ backgroundColor: "var(--inner-border)" }}
         >
           <option value="TRON">TRON</option>
           <option value="ETH">Ethereum</option>
@@ -100,7 +100,7 @@ export default async function WalletsPage() {
         <button
           type="submit"
           className="h-9 rounded-md px-4 text-sm font-medium transition-colors"
-          style={{ backgroundColor: "#10b981", color: "#0d1117" }}
+          style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
         >
           Add wallet
         </button>
@@ -110,7 +110,7 @@ export default async function WalletsPage() {
       {rows.length === 0 ? (
         <div
           className="flex flex-col items-center justify-center gap-2 rounded-xl py-16"
-          style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}
+          style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}
         >
           <span className="text-slate-500 text-sm">No wallets yet</span>
           <span className="text-slate-600 text-xs">Add a wallet address above to start tracking</span>
@@ -118,11 +118,11 @@ export default async function WalletsPage() {
       ) : (
         <div
           className="overflow-hidden rounded-xl"
-          style={{ border: "1px solid #1e2432" }}
+          style={{ border: "1px solid var(--inner-border)" }}
         >
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ backgroundColor: "#161b27", borderBottom: "1px solid #1e2432" }}>
+              <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Chain</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Address</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Label</th>
@@ -139,8 +139,8 @@ export default async function WalletsPage() {
                   <tr
                     key={row.id}
                     style={{
-                      backgroundColor: "#0d1117",
-                      borderBottom: isLast ? "none" : "1px solid #1e2432",
+                      backgroundColor: "var(--surface)",
+                      borderBottom: isLast ? "none" : "1px solid var(--inner-border)",
                     }}
                   >
                     <td className="px-4 py-3">

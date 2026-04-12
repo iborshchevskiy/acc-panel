@@ -6,10 +6,13 @@ import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { wallets, importTargets } from "@/db/schema/wallets";
 import { eq, and } from "drizzle-orm";
+import { ensureCurrencies } from "@/lib/currencies";
 import { fetchTrc20Transactions, fetchTrxTransfers } from "./tron";
 import { fetchEvmNormalTxs, fetchErc20Transfers } from "./evm";
 import { fetchSolTransactions } from "./sol";
 import { convertTronTx, convertEvmTx, convertSolTx } from "./converter";
+
+type ConvertedTx = ReturnType<typeof convertTronTx>;
 
 async function getInternalAddresses(orgId: string): Promise<Set<string>> {
   const rows = await db
@@ -19,42 +22,44 @@ async function getInternalAddresses(orgId: string): Promise<Set<string>> {
   return new Set(rows.map((r) => r.address.toLowerCase()));
 }
 
-async function upsertTransaction(
-  orgId: string,
-  converted: ReturnType<typeof convertTronTx>,
-  walletId: string
-): Promise<"inserted" | "skipped"> {
-  if (!converted) return "skipped";
-  const { tx, legs } = converted;
-
-  // Idempotency check
-  const existing = await db
-    .select({ id: transactions.id })
+async function getExistingHashes(orgId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ txHash: transactions.txHash })
     .from(transactions)
-    .where(and(eq(transactions.txHash, tx.txHash), eq(transactions.organizationId, orgId)))
-    .limit(1);
-  if (existing.length > 0) return "skipped";
+    .where(eq(transactions.organizationId, orgId));
+  return new Set(rows.map((r) => r.txHash).filter(Boolean) as string[]);
+}
+
+async function insertTransaction(
+  orgId: string,
+  converted: ConvertedTx,
+  walletId: string
+): Promise<void> {
+  if (!converted) return;
+  const { tx, legs } = converted;
 
   const [inserted] = await db
     .insert(transactions)
     .values({ ...tx, organizationId: orgId, isMatched: false })
     .returning({ id: transactions.id });
 
-  for (const leg of legs) {
-    await db.insert(transactionLegs).values({
-      transactionId: inserted.id,
-      direction: leg.direction,
-      amount: leg.amount,
-      currency: leg.currency,
-      walletId,
-    });
+  if (legs.length > 0) {
+    await db.insert(transactionLegs).values(
+      legs.map((leg) => ({
+        transactionId: inserted.id,
+        direction: leg.direction,
+        amount: leg.amount,
+        currency: leg.currency,
+        walletId,
+      }))
+    );
   }
 
-  return "inserted";
+  const legCodes = legs.map((l) => l.currency).filter(Boolean);
+  if (legCodes.length > 0) await ensureCurrencies(orgId, legCodes);
 }
 
 export async function runImport(walletId: string, orgId: string): Promise<{ inserted: number; skipped: number }> {
-  // Mark as running
   await db
     .update(importTargets)
     .set({ syncStatus: "running", lastError: null, updatedAt: new Date() })
@@ -73,50 +78,53 @@ export async function runImport(walletId: string, orgId: string): Promise<{ inse
     return { inserted: 0, skipped: 0 };
   }
 
-  const internalAddresses = await getInternalAddresses(orgId);
+  const [internalAddresses, existingHashes] = await Promise.all([
+    getInternalAddresses(orgId),
+    getExistingHashes(orgId),
+  ]);
+
   let inserted = 0;
   let skipped = 0;
 
   try {
+    let convertedTxs: Array<ConvertedTx> = [];
+
     if (wallet.chain === "TRON") {
       const [trc20, trx] = await Promise.all([
         fetchTrc20Transactions(wallet.address),
         fetchTrxTransfers(wallet.address),
       ]);
-
-      for (const raw of [...trc20, ...trx]) {
-        const converted = convertTronTx(raw, wallet.address, internalAddresses);
-        const result = await upsertTransaction(orgId, converted, walletId);
-        if (result === "inserted") inserted++; else skipped++;
-      }
+      convertedTxs = [...trc20, ...trx].map((raw) =>
+        convertTronTx(raw, wallet.address, internalAddresses)
+      );
     } else if (wallet.chain === "ETH" || wallet.chain === "BNB") {
       const chain = wallet.chain as "ETH" | "BNB";
       const [normal, erc20] = await Promise.all([
         fetchEvmNormalTxs(wallet.address, chain),
         fetchErc20Transfers(wallet.address, chain),
       ]);
-
-      for (const raw of [...normal, ...erc20]) {
-        const converted = convertEvmTx(raw, wallet.address, chain, internalAddresses);
-        const result = await upsertTransaction(orgId, converted, walletId);
-        if (result === "inserted") inserted++; else skipped++;
-      }
+      convertedTxs = [...normal, ...erc20].map((raw) =>
+        convertEvmTx(raw, wallet.address, chain, internalAddresses)
+      );
     } else if (wallet.chain === "SOL") {
       const { sol, spl } = await fetchSolTransactions(wallet.address);
-
-      for (const raw of sol) {
-        const converted = convertSolTx(raw, wallet.address, false, internalAddresses);
-        const result = await upsertTransaction(orgId, converted, walletId);
-        if (result === "inserted") inserted++; else skipped++;
-      }
-      for (const raw of spl) {
-        const converted = convertSolTx(raw, wallet.address, true, internalAddresses);
-        const result = await upsertTransaction(orgId, converted, walletId);
-        if (result === "inserted") inserted++; else skipped++;
-      }
+      convertedTxs = [
+        ...sol.map((raw) => convertSolTx(raw, wallet.address, false, internalAddresses)),
+        ...spl.map((raw) => convertSolTx(raw, wallet.address, true, internalAddresses)),
+      ];
     }
 
-    // Update tx count on wallet
+    for (const converted of convertedTxs) {
+      if (!converted) { skipped++; continue; }
+      if (converted.tx.txHash && existingHashes.has(converted.tx.txHash)) {
+        skipped++;
+        continue;
+      }
+      await insertTransaction(orgId, converted, walletId);
+      if (converted.tx.txHash) existingHashes.add(converted.tx.txHash);
+      inserted++;
+    }
+
     const txCountRow = await db
       .select({ count: transactions.id })
       .from(transactions)
