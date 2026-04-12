@@ -132,9 +132,10 @@ const MoonIcon = () => (
 
 interface SidebarProps {
   userEmail: string;
+  orgName?: string;
 }
 
-export default function Sidebar({ userEmail }: SidebarProps) {
+export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   const pathname = usePathname();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
@@ -173,7 +174,7 @@ export default function Sidebar({ userEmail }: SidebarProps) {
           ₿
         </span>
         <span className="text-sm font-semibold tracking-tight text-slate-100">
-          AccPanel
+          {orgName ?? "AccPanel"}
         </span>
       </div>
 
