@@ -79,18 +79,18 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-col gap-6 p-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-100">{org?.name ?? "Dashboard"}</h1>
-        <p className="text-sm text-slate-500">Overview</p>
+        <h1 className="text-lg font-semibold" style={{ color: "#e2e8f0" }}>{org?.name ?? "Dashboard"}</h1>
+        <p className="text-sm" style={{ color: "#334155" }}>Overview</p>
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-3 gap-4">
         {stats.map((s) => (
           <Link key={s.label} href={s.href}
-            className="rounded-xl p-5 transition-colors hover:border-opacity-50"
-            style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
-            <p className="text-xs text-slate-500">{s.label}</p>
-            <p className="mt-2 font-[family-name:var(--font-ibm-plex-mono)] text-3xl font-medium"
+            className="rounded-xl p-5 transition-all hover:translate-y-[-1px]"
+            style={{ backgroundColor: "#0d1117", border: "1px solid #1a2433", borderTop: `2px solid ${s.color}` }}>
+            <p className="text-xs font-medium tracking-wide" style={{ color: "#475569" }}>{s.label.toUpperCase()}</p>
+            <p className="mt-3 font-[family-name:var(--font-ibm-plex-mono)] text-4xl font-medium leading-none"
               style={{ color: s.color }}>{s.value}</p>
           </Link>
         ))}
@@ -98,15 +98,15 @@ export default async function DashboardPage() {
 
       {/* Volume */}
       {volumeRows.length > 0 && (
-        <div className="rounded-xl p-5" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
-          <p className="text-xs text-slate-500 mb-3">All-time income volume</p>
-          <div className="flex flex-wrap gap-6">
+        <div className="rounded-xl p-5" style={{ backgroundColor: "#0d1117", border: "1px solid #1a2433" }}>
+          <p className="text-xs font-medium tracking-wide mb-4" style={{ color: "#475569" }}>ALL-TIME INCOME VOLUME</p>
+          <div className="flex flex-wrap gap-8">
             {volumeRows.map((v) => (
-              <div key={v.currency}>
-                <span className="font-[family-name:var(--font-ibm-plex-mono)] text-xl font-medium text-slate-100">
+              <div key={v.currency} className="flex items-baseline gap-2">
+                <span className="font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium" style={{ color: "#10b981" }}>
                   {parseFloat(v.total ?? "0").toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </span>
-                <span className="ml-1.5 text-sm text-slate-500">{v.currency}</span>
+                <span className="text-sm font-mono font-medium" style={{ color: "#475569" }}>{v.currency}</span>
               </div>
             ))}
           </div>
@@ -115,29 +115,29 @@ export default async function DashboardPage() {
 
       {/* Recent transactions */}
       {recent.length > 0 && (
-        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #1e2432" }}>
-          <div className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: "#161b27", borderBottom: "1px solid #1e2432" }}>
-            <h2 className="text-sm font-medium text-slate-300">Recent transactions</h2>
-            <Link href="/app/transactions" className="text-xs text-slate-500 hover:text-emerald-400 transition-colors">View all →</Link>
+        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #1a2433" }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: "#0d1117", borderBottom: "1px solid #1a2433" }}>
+            <h2 className="text-xs font-medium tracking-wide" style={{ color: "#475569" }}>RECENT TRANSACTIONS</h2>
+            <Link href="/app/transactions" className="text-xs transition-colors" style={{ color: "#334155" }}>View all →</Link>
           </div>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" style={{ backgroundColor: "#07090c" }}>
             <tbody>
               {recent.map((tx, i) => {
                 const legs = legsByTx.get(tx.id) ?? [];
                 const inLeg = legs.find((l) => l.direction === "in");
                 const outLeg = legs.find((l) => l.direction === "out");
                 return (
-                  <tr key={tx.id} style={{ backgroundColor: "#0d1117", borderBottom: i < recent.length - 1 ? "1px solid #1e2432" : "none" }}>
-                    <td className="px-4 py-2.5 text-xs text-slate-500">
+                  <tr key={tx.id} style={{ borderBottom: i < recent.length - 1 ? "1px solid #1a2433" : "none" }}>
+                    <td className="px-4 py-3 text-xs font-mono" style={{ color: "#334155", whiteSpace: "nowrap" }}>
                       {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-slate-400">{tx.transactionType ?? tx.type}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono">
-                      {inLeg && <span className="text-emerald-400">+{Number(inLeg.amount).toLocaleString()} {inLeg.currency}</span>}
-                      {inLeg && outLeg && <span className="mx-1 text-slate-700">/</span>}
-                      {outLeg && <span className="text-red-400">-{Number(outLeg.amount).toLocaleString()} {outLeg.currency}</span>}
+                    <td className="px-4 py-3 text-xs" style={{ color: "#64748b" }}>{tx.transactionType ?? tx.type}</td>
+                    <td className="px-4 py-3 text-xs font-mono">
+                      {inLeg && <span style={{ color: "#10b981" }}>+{Number(inLeg.amount).toLocaleString()} {inLeg.currency}</span>}
+                      {inLeg && outLeg && <span className="mx-1.5" style={{ color: "#1a2433" }}>/</span>}
+                      {outLeg && <span style={{ color: "#f87171" }}>-{Number(outLeg.amount).toLocaleString()} {outLeg.currency}</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-slate-600">
+                    <td className="px-4 py-3 text-xs font-mono" style={{ color: "#1e293b" }}>
                       {tx.location ? `${tx.location.slice(0, 6)}…${tx.location.slice(-4)}` : ""}
                     </td>
                   </tr>

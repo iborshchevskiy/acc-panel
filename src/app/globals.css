@@ -1,26 +1,87 @@
 @import "tailwindcss";
 
+/* ── Base tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg:       #07090c;
+  --surface:  #0d1117;
+  --raised:   #131920;
+  --border:   #1a2433;
+  --border-hi:#243040;
+  --accent:   #10b981;
+  --accent-lo:rgba(16,185,129,0.10);
+  --accent-md:rgba(16,185,129,0.18);
+  --text-1:   #e2e8f0;
+  --text-2:   #64748b;
+  --text-3:   #334155;
+  --red:      #f87171;
+  --blue:     #60a5fa;
+  --amber:    #fbbf24;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ── Smooth everything ───────────────────────────────────────────────────── */
+html { scroll-behavior: smooth; }
+
+/* ── Custom scrollbar ────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ── Selection ───────────────────────────────────────────────────────────── */
+::selection { background: rgba(16,185,129,0.22); color: var(--text-1); }
+
+/* ── Landing page animations ─────────────────────────────────────────────── */
+@keyframes fadeup {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@keyframes fadein {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
+@keyframes scanline {
+  0%   { top: 0%; opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+@keyframes row-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(16,185,129,0.25); }
+  50%       { border-color: rgba(16,185,129,0.55); }
+}
+
+@keyframes ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────────── */
+.animate-fadeup   { animation: fadeup  0.6s cubic-bezier(.16,1,.3,1) both; }
+.animate-fadein   { animation: fadein  0.4s ease both; }
+.delay-100 { animation-delay: 0.10s; }
+.delay-200 { animation-delay: 0.20s; }
+.delay-300 { animation-delay: 0.30s; }
+.delay-400 { animation-delay: 0.40s; }
+.delay-500 { animation-delay: 0.50s; }
+.delay-600 { animation-delay: 0.60s; }
+
+/* ── App chrome ──────────────────────────────────────────────────────────── */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: var(--font-dm-sans, "DM Sans", system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
 }

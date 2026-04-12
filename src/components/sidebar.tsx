@@ -163,23 +163,24 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   return (
     <aside
       className="flex w-56 shrink-0 flex-col"
-      style={{ backgroundColor: "#0d1117", borderRight: "1px solid #1e2432" }}
+      style={{ backgroundColor: "#07090c", borderRight: "1px solid #1a2433" }}
     >
-      {/* Logo */}
-      <div className="flex h-14 items-center gap-2.5 px-5">
-        <span
-          className="flex h-7 w-7 items-center justify-center rounded-md text-sm font-bold"
-          style={{ backgroundColor: "#10b981", color: "#0d1117" }}
-        >
+      {/* Logo / org */}
+      <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: "1px solid #1a2433" }}>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-bold"
+          style={{ backgroundColor: "#10b981", color: "#0d1117" }}>
           ₿
         </span>
-        <span className="text-sm font-semibold tracking-tight text-slate-100">
-          {orgName ?? "AccPanel"}
-        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold leading-tight" style={{ color: "#e2e8f0" }}>
+            {orgName ?? "AccPanel"}
+          </p>
+          {orgName && <p className="text-[10px] leading-tight" style={{ color: "#334155" }}>organisation</p>}
+        </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-0.5 px-2 pt-2">
+      <nav className="flex flex-1 flex-col gap-px px-2 pt-3">
         {NAV_ITEMS.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -188,19 +189,16 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
-              className={[
-                "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "text-emerald-400"
-                  : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
-              ].join(" ")}
-              style={
-                isActive
-                  ? { backgroundColor: "rgba(16,185,129,0.12)" }
-                  : undefined
-              }
+              className="flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium transition-all duration-150"
+              style={isActive ? {
+                backgroundColor: "rgba(16,185,129,0.10)",
+                color: "#10b981",
+                boxShadow: "inset 2px 0 0 #10b981",
+              } : {
+                color: "#475569",
+              }}
             >
-              <span className={isActive ? "text-emerald-400" : "text-slate-500"}>
+              <span style={{ color: isActive ? "#10b981" : "#334155", transition: "color 0.15s" }}>
                 {item.icon}
               </span>
               {item.label}
@@ -210,30 +208,25 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div
-        className="flex flex-col gap-3 border-t px-4 py-4"
-        style={{ borderColor: "#1e2432" }}
-      >
-        <div className="flex items-center justify-between">
-          <span className="max-w-[140px] truncate text-xs text-slate-500">
-            {userEmail}
-          </span>
-          <button
-            onClick={toggleTheme}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
-            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
-          >
-            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-          </button>
+      <div className="px-3 pb-3 pt-2" style={{ borderTop: "1px solid #1a2433", marginTop: "8px" }}>
+        <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: "#0d1117", border: "1px solid #1a2433" }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="max-w-[118px] truncate text-xs" style={{ color: "#475569" }}>{userEmail}</span>
+            <button
+              onClick={toggleTheme}
+              className="flex h-6 w-6 items-center justify-center rounded transition-colors"
+              style={{ color: "#334155" }}
+              title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+            >
+              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </div>
+          <form action="/api/auth/signout" method="POST">
+            <button type="submit" className="text-xs transition-colors" style={{ color: "#334155" }}>
+              Sign out →
+            </button>
+          </form>
         </div>
-        <form action="/api/auth/signout" method="POST">
-          <button
-            type="submit"
-            className="w-full rounded-md px-3 py-1.5 text-left text-xs text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
-          >
-            Sign out
-          </button>
-        </form>
       </div>
     </aside>
   );
