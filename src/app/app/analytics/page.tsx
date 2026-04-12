@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
-import { transactionClients } from "@/db/schema/clients";
-import { clients } from "@/db/schema/clients";
+import { transactionClients, clients } from "@/db/schema/clients";
+import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
 import { eq, and, sql } from "drizzle-orm";
 import { buildPeriodBuckets, buildSpreadAnalysis, type AnalyticsTxRow } from "@/lib/fifo/engine";
@@ -24,6 +24,9 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     .from(organizationMembers).where(eq(organizationMembers.userId, user.id)).limit(1);
   if (!membership) redirect("/app/onboarding");
   const orgId = membership.organizationId;
+
+  const fiatRows = await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.type, "fiat"));
+  const fiatSet = new Set(fiatRows.map((r) => r.code));
 
   // Fetch all transactions with their legs and client assignments
   const txRows = await db
@@ -82,7 +85,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
   });
 
   const periods = buildPeriodBuckets(analyticsRows, bucket);
-  const spreads = buildSpreadAnalysis(analyticsRows);
+  const spreads = buildSpreadAnalysis(analyticsRows, fiatSet);
 
   // Summary totals
   const totalVolume = new Map<string, number>();

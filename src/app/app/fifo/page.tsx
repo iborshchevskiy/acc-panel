@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
+import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
 import { eq } from "drizzle-orm";
 import { runFifo, type FifoTxRow } from "@/lib/fifo/engine";
@@ -14,6 +15,9 @@ export default async function FifoPage() {
   const [membership] = await db.select({ organizationId: organizationMembers.organizationId })
     .from(organizationMembers).where(eq(organizationMembers.userId, user.id)).limit(1);
   if (!membership) redirect("/app/onboarding");
+
+  const fiatRows = await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.type, "fiat"));
+  const fiatSet = new Set(fiatRows.map((r) => r.code));
 
   const txRows = await db
     .select({
@@ -58,7 +62,7 @@ export default async function FifoPage() {
     };
   });
 
-  const result = runFifo(fifoRows);
+  const result = runFifo(fifoRows, fiatSet);
 
   const totalRealizedGain = result.summary.reduce((s, p) => s + p.totalRealizedGain, 0);
   const gainCurrencies = [...new Set(result.summary.map((s) => s.gainCurrency))];
