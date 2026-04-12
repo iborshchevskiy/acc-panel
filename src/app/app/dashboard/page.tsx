@@ -148,14 +148,6 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {txCount === 0 && (
-        <div className="rounded-xl p-6" style={{ backgroundColor: "#161b27", border: "1px solid rgba(16,185,129,0.25)" }}>
-          <h2 className="text-sm font-semibold text-slate-100">Import your data</h2>
-          <p className="mt-1 text-sm text-slate-400">Bring in your existing master CSV from AccPanel v1.</p>
-          <Link href="/app/data" className="mt-3 inline-flex h-8 items-center rounded-md px-4 text-sm font-medium"
-            style={{ backgroundColor: "#10b981", color: "#0d1117" }}>Go to Data Hub</Link>
-        </div>
-      )}
     </div>
   );
 }
