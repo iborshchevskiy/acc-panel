@@ -40,7 +40,9 @@ export default async function AppLayout({
       .where(eq(organizationMembers.userId, user.id))
       .limit(1);
 
-    if (!membership) redirect("/app/onboarding");
+    if (!membership) {
+      redirect("/app/onboarding");
+    }
 
     const [org] = await db
       .select({ name: organizations.name })
@@ -49,8 +51,10 @@ export default async function AppLayout({
       .limit(1);
 
     orgName = org?.name;
-  } catch {
-    // DB not configured yet
+  } catch (err) {
+    // Re-throw Next.js redirects — redirect() throws internally and must not be swallowed
+    if ((err as { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
+    // Otherwise DB not configured yet — render without org name
   }
 
   return (
