@@ -6,7 +6,7 @@ import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { wallets } from "@/db/schema/wallets";
 import { clients } from "@/db/schema/clients";
 import { organizationMembers, organizations } from "@/db/schema/system";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 
 export const metadata = { title: "Dashboard — AccPanel" };
 
@@ -50,7 +50,7 @@ export default async function DashboardPage() {
   const recentLegs = recentIds.length > 0 ? await db
     .select({ transactionId: transactionLegs.transactionId, direction: transactionLegs.direction, amount: transactionLegs.amount, currency: transactionLegs.currency })
     .from(transactionLegs)
-    .where(sql`${transactionLegs.transactionId} = ANY(ARRAY[${sql.raw(recentIds.map((id) => `'${id}'`).join(","))}]::uuid[])`)
+    .where(inArray(transactionLegs.transactionId, recentIds))
     : [];
 
   const legsByTx = new Map<string, typeof recentLegs>();
