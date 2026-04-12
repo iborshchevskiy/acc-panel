@@ -16,7 +16,8 @@
     "db:studio": "drizzle-kit studio",
     "seed:currencies": "tsx scripts/seed-currencies.ts",
     "migrate:wallets": "tsx scripts/migrate-wallets.ts",
-    "migrate:transactions": "tsx scripts/migrate-transactions.ts"
+    "migrate:transactions": "tsx scripts/migrate-transactions.ts",
+    "migrate:clients": "tsx scripts/migrate-clients.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
