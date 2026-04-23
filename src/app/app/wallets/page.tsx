@@ -5,7 +5,10 @@ import { wallets, importTargets } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
 import { eq, and } from "drizzle-orm";
 import { addWallet, deleteWallet } from "./actions";
+import WalletLabelEditor from "./WalletLabelEditor";
 import ImportButton from "@/components/import-button";
+import ChainPicker from "./ChainPicker";
+import AutoImportToggle from "./AutoImportToggle";
 
 const CHAIN_META: Record<string, { label: string; color: string; explorer: (a: string) => string }> = {
   TRON: {
@@ -52,6 +55,8 @@ export default async function WalletsPage() {
       syncStatus: importTargets.syncStatus,
       lastSyncAt: importTargets.lastSyncAt,
       txCount: importTargets.txCount,
+      autoImport: importTargets.autoImport,
+      autoImportInterval: importTargets.autoImportInterval,
     })
     .from(wallets)
     .leftJoin(importTargets, eq(importTargets.walletId, wallets.id))
@@ -85,18 +90,7 @@ export default async function WalletsPage() {
           placeholder="Label (optional)"
           className="h-9 w-44 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500"
         />
-        <select
-          name="chain"
-          required
-          defaultValue="TRON"
-          className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500"
-          style={{ backgroundColor: "var(--inner-border)" }}
-        >
-          <option value="TRON">TRON</option>
-          <option value="ETH">Ethereum</option>
-          <option value="BNB">BNB Chain</option>
-          <option value="SOL">Solana</option>
-        </select>
+        <ChainPicker defaultValue="TRON" />
         <button
           type="submit"
           className="h-9 rounded-md px-4 text-sm font-medium transition-colors"
@@ -120,13 +114,22 @@ export default async function WalletsPage() {
           className="overflow-hidden rounded-xl"
           style={{ border: "1px solid var(--inner-border)" }}
         >
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
+            <colgroup>
+              <col className="w-28" />
+              <col className="w-44" />
+              <col className="w-32" />
+              <col />
+              <col className="w-64" />
+              <col className="w-16" />
+            </colgroup>
             <thead>
               <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Chain</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Address</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Label</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500" colSpan={3}>Sync</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Auto-import</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -162,13 +165,21 @@ export default async function WalletsPage() {
                         {row.address.slice(0, 8)}…{row.address.slice(-6)}
                       </a>
                     </td>
-                    <td className="px-4 py-3 text-slate-400">
-                      {row.label ?? <span className="text-slate-600">—</span>}
+                    <td className="px-4 py-3">
+                      <WalletLabelEditor walletId={row.id} initialLabel={row.label} />
                     </td>
                     <td className="px-4 py-3" colSpan={3}>
                       <ImportButton
                         walletId={row.id}
                         initialStatus={row.syncStatus ?? "idle"}
+                      />
+                    </td>
+                    <td className="px-4 py-3 w-64">
+                      <AutoImportToggle
+                        walletId={row.id}
+                        initialEnabled={row.autoImport ?? false}
+                        initialInterval={row.autoImportInterval ?? "24h"}
+                        lastSyncAt={row.lastSyncAt ? row.lastSyncAt.toISOString() : null}
                       />
                     </td>
                     <td className="px-4 py-3 text-right">

@@ -4,7 +4,8 @@ import { db } from "@/db/client";
 import { clients, clientWallets, transactionClients } from "@/db/schema/clients";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { wallets } from "@/db/schema/wallets";
 import { updateClient, deleteClient, addClientWallet, removeClientWallet } from "../actions";
 
 interface PageProps { params: Promise<{ id: string }> }
@@ -34,6 +35,9 @@ export default async function ClientDetailPage({ params }: PageProps) {
       transactionType: transactions.transactionType,
       type: transactions.type,
       location: transactions.location,
+      fromAddress: transactions.fromAddress,
+      toAddress: transactions.toAddress,
+      chain: transactions.chain,
       isMatched: transactions.isMatched,
     })
     .from(transactions)
@@ -57,6 +61,34 @@ export default async function ClientDetailPage({ params }: PageProps) {
     arr.push(leg);
     legsByTx.set(leg.transactionId, arr);
   }
+
+  // Collect external counterparty addresses from transaction fromAddress/toAddress
+  const addrChainMap = new Map<string, string>(); // address → chain
+  for (const tx of txRows) {
+    if (tx.fromAddress?.trim()) addrChainMap.set(tx.fromAddress.trim(), tx.chain ?? "TRON");
+    if (tx.toAddress?.trim()) addrChainMap.set(tx.toAddress.trim(), tx.chain ?? "TRON");
+  }
+  const allAddresses = [...addrChainMap.keys()];
+
+  // Fetch org's own wallets to exclude them
+  const orgWalletRows = allAddresses.length > 0
+    ? await db.select({ address: wallets.address })
+        .from(wallets)
+        .where(and(eq(wallets.organizationId, membership.organizationId), inArray(wallets.address, allAddresses)))
+    : [];
+  const orgAddressSet = new Set(orgWalletRows.map((w) => w.address));
+
+  // External addresses not already in clientWallets
+  const linkedAddressSet = new Set(walletRows.map((w) => w.address));
+  const autoWallets = allAddresses
+    .filter((a) => !orgAddressSet.has(a) && !linkedAddressSet.has(a))
+    .map((a) => ({ address: a, chain: addrChainMap.get(a) ?? "TRON", label: null, auto: true }));
+
+  // Merge: manual clientWallets + auto-derived
+  const allCounterpartyWallets = [
+    ...walletRows.map((w) => ({ ...w, auto: false })),
+    ...autoWallets,
+  ];
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -103,9 +135,15 @@ export default async function ClientDetailPage({ params }: PageProps) {
         </div>
       </form>
 
-      {/* Linked wallets */}
+      {/* Counterparty wallets — manual + auto-derived from transactions */}
       <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-slate-300">Counterparty wallets</h2>
+        <h2 className="text-sm font-medium text-slate-300">
+          Counterparty wallets
+          {allCounterpartyWallets.length > 0 && (
+            <span className="ml-2 text-xs font-normal text-slate-600">{allCounterpartyWallets.length}</span>
+          )}
+        </h2>
+        {/* Manual add form */}
         <form action={addClientWallet.bind(null, id)} className="flex gap-2">
           <input name="address" placeholder="Wallet address" required
             className="h-8 flex-1 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
@@ -118,16 +156,20 @@ export default async function ClientDetailPage({ params }: PageProps) {
           <button type="submit" className="h-8 rounded-md px-3 text-sm font-medium"
             style={{ backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }}>Add</button>
         </form>
-        {walletRows.length > 0 && (
+        {allCounterpartyWallets.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {walletRows.map((w) => (
-              <div key={w.id} className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs"
+            {allCounterpartyWallets.map((w) => (
+              <div key={w.address} className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs"
                 style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
                 <span className="font-mono text-slate-400">{w.address.slice(0, 8)}…{w.address.slice(-4)}</span>
                 <span className="text-slate-600">{w.chain}</span>
-                <form action={removeClientWallet.bind(null, w.id, id)}>
-                  <button type="submit" className="text-slate-700 hover:text-red-400 transition-colors">×</button>
-                </form>
+                {w.auto ? (
+                  <span className="text-slate-700 text-[10px]">tx</span>
+                ) : (
+                  <form action={removeClientWallet.bind(null, (w as typeof walletRows[0]).id, id)}>
+                    <button type="submit" className="text-slate-700 hover:text-red-400 transition-colors">×</button>
+                  </form>
+                )}
               </div>
             ))}
           </div>

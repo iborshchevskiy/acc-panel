@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { transactionClients, clients } from "@/db/schema/clients";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 
 interface DebtPosition {
   clientId: string;
@@ -43,7 +44,8 @@ export default async function DebtsPage() {
     .leftJoin(transactionLegs, eq(transactionLegs.transactionId, transactions.id))
     .where(and(
       eq(transactions.organizationId, orgId),
-      eq(transactions.transactionType, "Debt")
+      eq(transactions.transactionType, "Debt"),
+      isNull(transactions.deletedAt)
     ));
 
   if (rows.length === 0) {
@@ -130,30 +132,38 @@ export default async function DebtsPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Since</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-slate-500">Txs</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Status</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {sorted.map((pos, i) => {
-              const openBalances = Object.entries(pos.balances).filter(([, v]) => Math.abs(v) >= 0.001);
-              const isSettled = openBalances.length === 0;
+              const allBalances = Object.entries(pos.balances).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+              const isSettled = allBalances.every(([, v]) => Math.abs(v) < 0.001);
               const badge = ageBadge(pos.ageDays);
               return (
                 <tr key={pos.clientId} style={{ backgroundColor: "var(--surface)", borderBottom: i < sorted.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
                   <td className="px-4 py-3 font-medium text-slate-200">{pos.clientName}</td>
                   <td className="px-4 py-3">
-                    {isSettled ? (
-                      <span className="text-xs text-slate-600">Settled</span>
+                    {allBalances.length === 0 ? (
+                      <span className="text-xs text-slate-600">—</span>
                     ) : (
                       <div className="flex flex-col gap-0.5">
-                        {openBalances.map(([cur, net]) => (
-                          <span key={cur} className="text-xs font-mono"
-                            style={{ color: net > 0 ? "var(--accent)" : "var(--red)" }}>
-                            {net > 0 ? "+" : ""}{net.toLocaleString(undefined, { maximumFractionDigits: 2 })} {cur}
-                            <span className="ml-1 text-slate-600 font-sans">
-                              {net > 0 ? "(they owe us)" : "(we owe them)"}
+                        {allBalances.map(([cur, net]) => {
+                          const settled = Math.abs(net) < 0.001;
+                          return (
+                            <span key={cur} className="text-xs font-mono"
+                              style={{ color: settled ? "var(--text-4)" : net > 0 ? "var(--accent)" : "var(--red)" }}>
+                              {settled
+                                ? `0 ${cur}`
+                                : `${net > 0 ? "+" : ""}${net.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${cur}`}
+                              {!settled && (
+                                <span className="ml-1 text-slate-600 font-sans">
+                                  {net > 0 ? "(they owe us)" : "(we owe them)"}
+                                </span>
+                              )}
                             </span>
-                          </span>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </td>
@@ -169,6 +179,13 @@ export default async function DebtsPage() {
                         {badge.label}
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link href={`/app/debts/${pos.clientId}`}
+                      className="text-xs px-2.5 py-1 rounded-md transition-colors"
+                      style={{ color: "var(--text-3)", border: "1px solid var(--inner-border)", backgroundColor: "var(--raised-hi)" }}>
+                      History →
+                    </Link>
                   </td>
                 </tr>
               );

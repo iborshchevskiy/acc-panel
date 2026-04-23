@@ -17,6 +17,7 @@ interface Props {
     timestamp: string;
     transactionType: string | null;
     comment: string | null;
+    status: string | null;
   };
   legs: LegData[];
   txTypes: string[];
@@ -93,6 +94,7 @@ function CurrencyCombobox({
       />
       {open && filtered.length > 0 && (
         <div className="absolute left-0 z-50 mt-1.5 min-w-[96px]" style={{ top: "100%", ...dropdownPanel }}>
+          <div className="max-h-36 overflow-y-auto">
           {filtered.map((c) => {
             const isSelected = c === value;
             const isHovered = c === hovered;
@@ -113,6 +115,7 @@ function CurrencyCombobox({
               </button>
             );
           })}
+          </div>
         </div>
       )}
     </div>
@@ -242,7 +245,7 @@ export default function EditTransactionForm({ tx, legs, txTypes, currencyCodes, 
       )}
 
       {/* Meta */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
         <label className="flex flex-col gap-1">
           <span className="text-xs" style={{ color: "var(--text-3)" }}>Date & time</span>
           <input name="date" type="datetime-local" required defaultValue={toLocalIso(tx.timestamp)}
@@ -254,6 +257,17 @@ export default function EditTransactionForm({ tx, legs, txTypes, currencyCodes, 
             style={{ borderColor: "var(--inner-border)", backgroundColor: "transparent", color: "var(--text-1)" }}>
             <option value="">— none —</option>
             {txTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs" style={{ color: "var(--text-3)" }}>Status</span>
+          <select name="status" defaultValue={tx.status ?? ""} className={inputCls}
+            style={{ borderColor: "var(--inner-border)", backgroundColor: "transparent", color: "var(--text-1)" }}>
+            <option value="">— none —</option>
+            <option value="done">Done</option>
+            <option value="in_process">In process</option>
+            <option value="failed">Failed</option>
+            <option value="unknown">Unknown</option>
           </select>
         </label>
         <label className="flex flex-col gap-1">

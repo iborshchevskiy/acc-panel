@@ -210,7 +210,7 @@ export default function ClientPicker({ txId, current, clients }: Props) {
           </div>
 
           {/* Client list */}
-          <div className="max-h-52 overflow-y-auto">
+          <div className="max-h-36 overflow-y-auto">
             {filtered.length === 0 && !showCreate && (
               <p className="px-3 py-3 text-xs" style={{ color: "var(--text-3)" }}>
                 No clients found

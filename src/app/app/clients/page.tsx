@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
-import { clients, clientWallets } from "@/db/schema/clients";
+import { clients, transactionClients } from "@/db/schema/clients";
+import { transactions } from "@/db/schema/transactions";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, isNull } from "drizzle-orm";
 import { addClient } from "./actions";
 
 export default async function ClientsPage() {
@@ -24,12 +25,28 @@ export default async function ClientsPage() {
       tgUsername: clients.tgUsername,
       note: clients.note,
       createdAt: clients.createdAt,
-      walletCount: sql<number>`count(${clientWallets.id})::int`,
+      walletCount: sql<number>`(
+        SELECT COUNT(DISTINCT addr) FROM (
+          SELECT t.from_address AS addr
+            FROM transactions t
+            INNER JOIN transaction_clients tc2 ON tc2.transaction_id = t.id
+           WHERE tc2.client_id = clients.id
+             AND t.deleted_at IS NULL
+             AND t.from_address IS NOT NULL AND t.from_address != ''
+             AND t.from_address NOT IN (SELECT address FROM wallets WHERE organization_id = clients.organization_id)
+          UNION
+          SELECT t.to_address
+            FROM transactions t
+            INNER JOIN transaction_clients tc3 ON tc3.transaction_id = t.id
+           WHERE tc3.client_id = clients.id
+             AND t.deleted_at IS NULL
+             AND t.to_address IS NOT NULL AND t.to_address != ''
+             AND t.to_address NOT IN (SELECT address FROM wallets WHERE organization_id = clients.organization_id)
+        ) addrs
+      )::int`,
     })
     .from(clients)
-    .leftJoin(clientWallets, eq(clientWallets.clientId, clients.id))
     .where(eq(clients.organizationId, membership.organizationId))
-    .groupBy(clients.id)
     .orderBy(clients.createdAt);
 
   return (

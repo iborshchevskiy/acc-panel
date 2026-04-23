@@ -4,7 +4,7 @@ import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 import { runFifo, type FifoTxRow } from "@/lib/fifo/engine";
 
 export async function GET() {
@@ -28,7 +28,7 @@ export async function GET() {
   const txRows = await db
     .select({ id: transactions.id, timestamp: transactions.timestamp, transactionType: transactions.transactionType })
     .from(transactions)
-    .where(and(eq(transactions.organizationId, orgId), eq(transactions.transactionType, "Exchange")))
+    .where(and(eq(transactions.organizationId, orgId), eq(transactions.transactionType, "Exchange"), isNull(transactions.deletedAt)))
     .orderBy(transactions.timestamp);
 
   const legs = txRows.length > 0

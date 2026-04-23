@@ -3,6 +3,8 @@ import { DM_Sans, IBM_Plex_Mono } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
 import Sidebar from "@/components/sidebar";
 import FlashBanner from "@/components/flash-banner";
+import LockProvider from "@/components/LockProvider";
+import LockScreen from "@/components/LockScreen";
 import { db } from "@/db/client";
 import { organizationMembers, organizations } from "@/db/schema/system";
 import { eq } from "drizzle-orm";
@@ -59,15 +61,18 @@ export default async function AppLayout({
   }
 
   return (
-    <div
-      className={`${dmSans.variable} ${ibmPlexMono.variable} flex h-screen overflow-hidden font-[family-name:var(--font-dm-sans)]`}
-      style={{ backgroundColor: "var(--bg)" }}
-    >
-      <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
-      <main className="flex flex-1 flex-col overflow-y-auto" style={{ backgroundColor: "var(--bg)" }}>
-        {children}
-      </main>
-      <FlashBanner />
-    </div>
+    <LockProvider>
+      <div
+        className={`${dmSans.variable} ${ibmPlexMono.variable} flex h-screen overflow-hidden font-[family-name:var(--font-dm-sans)]`}
+        style={{ backgroundColor: "var(--bg)" }}
+      >
+        <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
+        <main className="flex flex-1 flex-col overflow-y-auto" style={{ backgroundColor: "var(--bg)" }}>
+          {children}
+        </main>
+        <FlashBanner />
+      </div>
+      <LockScreen />
+    </LockProvider>
   );
 }

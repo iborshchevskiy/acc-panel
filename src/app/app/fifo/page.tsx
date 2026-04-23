@@ -71,8 +71,11 @@ export default async function FifoPage() {
 
   const result = runFifo(fifoRows, fiatSet);
 
-  const totalRealizedGain = result.summary.reduce((s, p) => s + p.totalRealizedGain, 0);
-  const gainCurrencies = [...new Set(result.summary.map((s) => s.gainCurrency))];
+  const gainByCurrency = result.summary.reduce<Record<string, number>>((acc, s) => {
+    acc[s.gainCurrency] = (acc[s.gainCurrency] ?? 0) + s.totalRealizedGain;
+    return acc;
+  }, {});
+  const gainEntries = Object.entries(gainByCurrency).sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -87,12 +90,21 @@ export default async function FifoPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
-          <p className="text-xs text-slate-500">Total Realized Gain</p>
-          <p className="mt-1 text-xl font-semibold font-mono"
-            style={{ color: totalRealizedGain >= 0 ? "var(--accent)" : "var(--red)" }}>
-            {totalRealizedGain >= 0 ? "+" : ""}{totalRealizedGain.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          </p>
-          <p className="text-xs text-slate-600">{gainCurrencies.join(", ") || "—"}</p>
+          <p className="text-xs text-slate-500">Realized Gain</p>
+          {gainEntries.length === 0 ? (
+            <p className="mt-1 text-xl font-semibold font-mono text-slate-600">—</p>
+          ) : (
+            <div className="mt-1 flex flex-col gap-0.5">
+              {gainEntries.map(([currency, gain]) => (
+                <p key={currency} className="text-lg font-semibold font-mono leading-tight"
+                  style={{ color: gain >= 0 ? "var(--accent)" : "var(--red)" }}>
+                  {gain >= 0 ? "+" : ""}{gain.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  <span className="text-xs text-slate-500 ml-1">{currency}</span>
+                </p>
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-slate-600 mt-1">by currency</p>
         </div>
         <div className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
           <p className="text-xs text-slate-500">Open Positions</p>

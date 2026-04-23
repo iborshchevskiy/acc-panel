@@ -7,24 +7,14 @@ import { organizationMembers } from "@/db/schema/system";
 import { currencies, orgTransactionTypes } from "@/db/schema/wallets";
 import { eq, and, desc, ilike, or, sql, asc, inArray, isNull } from "drizzle-orm";
 import ManualTransactionForm from "./ManualTransactionForm";
-import EditTransactionForm from "./EditTransactionForm";
 import TransactionFilters from "./TransactionFilters";
-import ClientPicker, { type ClientOption } from "./ClientPicker";
-import { deleteTransaction } from "./actions";
+import { type ClientOption } from "./ClientPicker";
+import TransactionTable from "./TransactionTable";
 
 const PAGE_SIZE = 50;
 
-const TX_TYPE_COLORS: Record<string, string> = {
-  Exchange: "var(--indigo)",
-  Revenue: "var(--accent)",
-  Expense: "var(--red)",
-  Debt: "var(--amber)",
-  Transfer: "var(--text-2)",
-  Fee: "var(--violet)",
-};
-
 interface PageProps {
-  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string; edit?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string }>;
 }
 
 export default async function TransactionsPage({ searchParams }: PageProps) {
@@ -33,7 +23,6 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const q = params.q ?? "";
   const typeFilter = params.type ?? "";
   const showForm = params.new === "1";
-  const editId = params.edit ?? "";
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -51,8 +40,12 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const [orgTxTypes, orgCurrencies, orgClients] = await Promise.all([
     db.select({ name: orgTransactionTypes.name }).from(orgTransactionTypes)
       .where(eq(orgTransactionTypes.organizationId, orgId)).orderBy(asc(orgTransactionTypes.name)),
-    db.select({ code: currencies.code }).from(currencies)
-      .where(eq(currencies.organizationId, orgId)).orderBy(asc(currencies.code)),
+    db.select({ code: currencies.code, usageCount: sql<number>`count(${transactionLegs.id})::int` })
+      .from(currencies)
+      .leftJoin(transactionLegs, eq(transactionLegs.currency, currencies.code))
+      .where(eq(currencies.organizationId, orgId))
+      .groupBy(currencies.code)
+      .orderBy(sql`count(${transactionLegs.id}) desc`, asc(currencies.code)),
     db.select({
       id: clients.id,
       name: clients.name,
@@ -148,24 +141,9 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
     .orderBy(transactions.transactionType);
   const txTypes = typeRows.map((r) => r.t).filter(Boolean) as string[];
 
-  // Build a stable "back" href that preserves active filters but strips edit/new
-  const filterQs = [
-    page > 1 ? `page=${page}` : "",
-    q ? `q=${encodeURIComponent(q)}` : "",
-    typeFilter ? `type=${encodeURIComponent(typeFilter)}` : "",
-  ].filter(Boolean).join("&");
-  const baseHref = `/app/transactions${filterQs ? `?${filterQs}` : ""}`;
-
-  // Find the tx being edited (must be on this page)
-  const editTx = editId ? rows.find((r) => r.id === editId) ?? null : null;
-  const editLegs = editTx
-    ? (legsByTx.get(editTx.id) ?? []).map((l) => ({
-        direction: l.direction as "in" | "out",
-        amount: l.amount ?? "",
-        currency: l.currency ?? "",
-        location: l.location ?? "",
-      })).filter((l) => l.direction === "in" || l.direction === "out")
-    : [];
+  const newHref = showForm
+    ? `/app/transactions${q || typeFilter || page > 1 ? `?${[page > 1 ? `page=${page}` : "", q ? `q=${encodeURIComponent(q)}` : "", typeFilter ? `type=${encodeURIComponent(typeFilter)}` : ""].filter(Boolean).join("&")}` : ""}`
+    : `/app/transactions?new=1${q ? `&q=${encodeURIComponent(q)}` : ""}${typeFilter ? `&type=${encodeURIComponent(typeFilter)}` : ""}`;
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -175,8 +153,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
           <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
           <p className="text-sm text-slate-500">{count.toLocaleString()} total</p>
         </div>
-        <a
-          href={showForm ? baseHref : `${baseHref}${filterQs ? "&" : "?"}new=1`}
+        <a href={newHref}
           className="h-8 flex items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors"
           style={{ backgroundColor: showForm ? "transparent" : "var(--green-btn-bg)", color: showForm ? "var(--text-2)" : "var(--accent)", border: showForm ? "1px solid var(--inner-border)" : "1px solid var(--green-btn-border)" }}
         >
@@ -193,155 +170,46 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
         />
       )}
 
-      {/* Edit form */}
-      {editTx && (
-        <EditTransactionForm
-          tx={{
-            id: editTx.id,
-            timestamp: editTx.timestamp.toISOString(),
-            transactionType: editTx.transactionType,
-            comment: editTx.comment,
-          }}
-          legs={editLegs}
-          txTypes={orgTxTypes.map(t => t.name)}
-          currencyCodes={orgCurrencies.map(c => c.code)}
-          cancelHref={baseHref}
+      {/* Filter bar + Table fused in one card */}
+      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
+        <TransactionFilters
+          key={`${q}|${typeFilter}`}
+          q={q}
+          typeFilter={typeFilter}
+          txTypes={txTypes}
+          total={count}
         />
-      )}
-
-      {/* Filters */}
-      <TransactionFilters q={q} typeFilter={typeFilter} txTypes={txTypes} />
-
-      {/* Table */}
-      {rows.length === 0 ? (
-        <div
-          className="flex flex-col items-center justify-center gap-2 rounded-xl py-16"
-          style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}
-        >
-          <span className="text-slate-500 text-sm">No transactions found</span>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">In</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Out</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">TxID</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Client</th>
-                <th className="px-4 py-3 w-16" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((tx, i) => {
-                const txLegs = legsByTx.get(tx.id) ?? [];
-                const inLeg = txLegs.find((l) => l.direction === "in");
-                const outLeg = txLegs.find((l) => l.direction === "out");
-                const isLast = i === rows.length - 1;
-                const typeColor = tx.transactionType
-                  ? (TX_TYPE_COLORS[tx.transactionType] ?? "var(--text-2)")
-                  : "var(--text-2)";
-                const explorerUrl = tx.txHash
-                  ? `https://tronscan.org/#/transaction/${tx.txHash}`
-                  : null;
-
-                const isEditing = tx.id === editId;
-                const editHref = `${baseHref}${filterQs ? "&" : "?"}edit=${tx.id}`;
-
-                return (
-                  <tr
-                    key={tx.id}
-                    style={{
-                      backgroundColor: isEditing ? "var(--raised-hi)" : "var(--surface)",
-                      borderBottom: isLast ? "none" : "1px solid var(--inner-border)",
-                    }}
-                  >
-                    <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
-                      {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
-                    </td>
-                    <td className="px-4 py-3">
-                      {tx.transactionType ? (
-                        <span
-                          className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
-                          style={{ backgroundColor: typeColor + "22", color: typeColor }}
-                        >
-                          {tx.transactionType}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-600">{tx.type}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono">
-                      {inLeg ? (
-                        <div>
-                          <span className="text-emerald-400">+{Number(inLeg.amount).toLocaleString()} {inLeg.currency}</span>
-                          {inLeg.location && (
-                            <div className="text-slate-600 text-xs mt-0.5">{inLeg.location.length > 14 ? `${inLeg.location.slice(0, 6)}…${inLeg.location.slice(-4)}` : inLeg.location}</div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-slate-700">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono">
-                      {outLeg ? (
-                        <div>
-                          <span className="text-red-400">-{Number(outLeg.amount).toLocaleString()} {outLeg.currency}</span>
-                          {outLeg.location && (
-                            <div className="text-slate-600 text-xs mt-0.5">{outLeg.location.length > 14 ? `${outLeg.location.slice(0, 6)}…${outLeg.location.slice(-4)}` : outLeg.location}</div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-slate-700">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-600">
-                      {explorerUrl && tx.txHash ? (
-                        <a
-                          href={explorerUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:text-emerald-400 transition-colors"
-                          title={tx.txHash}
-                        >
-                          {tx.txHash.slice(0, 8)}…
-                        </a>
-                      ) : (
-                        <span className="text-slate-700">manual</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <ClientPicker
-                        txId={tx.id}
-                        current={clientByTx.get(tx.id) ?? null}
-                        clients={orgClients}
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <a
-                          href={isEditing ? baseHref : editHref}
-                          className="text-xs transition-colors"
-                          style={{ color: isEditing ? "var(--accent)" : "var(--text-3)" }}
-                          title={isEditing ? "Close editor" : "Edit transaction"}
-                        >
-                          {isEditing ? "✕" : "edit"}
-                        </a>
-                        <form action={deleteTransaction}>
-                          <input type="hidden" name="tx_id" value={tx.id} />
-                          <button type="submit" className="text-xs text-slate-700 hover:text-red-400 transition-colors">×</button>
-                        </form>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+        {rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-16"
+            style={{ backgroundColor: "var(--surface)" }}>
+            <span className="text-slate-500 text-sm">No transactions found</span>
+          </div>
+        ) : (
+          <TransactionTable
+            rows={rows.map((r) => ({
+              id: r.id,
+              timestamp: r.timestamp.toISOString(),
+              transactionType: r.transactionType,
+              type: r.type,
+              txHash: r.txHash,
+              comment: r.comment,
+              status: r.status,
+            }))}
+            legs={legs.map((l) => ({
+              id: l.id,
+              transactionId: l.transactionId,
+              direction: l.direction,
+              amount: l.amount != null ? String(l.amount) : null,
+              currency: l.currency,
+              location: l.location,
+            }))}
+            clientByTx={Object.fromEntries(clientByTx)}
+            txTypes={orgTxTypes.map((t) => t.name)}
+            orgClients={orgClients}
+            currencyCodes={orgCurrencies.map((c) => c.code)}
+          />
+        )}
+      </div>
 
       {/* Pagination */}
       {totalPages > 1 && (

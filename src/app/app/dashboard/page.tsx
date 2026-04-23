@@ -6,20 +6,48 @@ import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { wallets } from "@/db/schema/wallets";
 import { clients } from "@/db/schema/clients";
 import { organizationMembers, organizations } from "@/db/schema/system";
-import { eq, and, desc, sql, inArray, isNull, gte, lt } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, isNull, gte } from "drizzle-orm";
+import { cashOperations } from "@/db/schema/capital";
+import DashboardFilters from "./DashboardFilters";
+import NetPositionFilter from "./NetPositionFilter";
 
 export const metadata = { title: "Dashboard — AccPanel" };
 
 const TYPE_COLORS: Record<string, string> = {
   Exchange: "var(--indigo)",
-  Revenue: "var(--accent)",
-  Expense: "var(--red)",
-  Debt: "var(--amber)",
+  Revenue:  "var(--accent)",
+  Expense:  "var(--red)",
+  Debt:     "var(--amber)",
   Transfer: "var(--text-2)",
-  Fee: "var(--violet)",
+  Fee:      "var(--violet)",
 };
 
-export default async function DashboardPage() {
+function netFlowQuery(orgId: string, from?: Date, to?: Date) {
+  return sql`
+    SELECT
+      tl.currency,
+      SUM(CASE WHEN tl.direction = 'in' THEN tl.amount::numeric ELSE -tl.amount::numeric END)::text AS net_flow
+    FROM transaction_legs tl
+    JOIN transactions t ON t.id = tl.transaction_id
+    WHERE t.organization_id = ${orgId}
+      AND t.transaction_type = 'Exchange'
+      AND t.deleted_at IS NULL
+      AND tl.direction IN ('in', 'out')
+      AND tl.currency IS NOT NULL
+      ${from ? sql`AND t.timestamp >= ${from.toISOString()}` : sql``}
+      ${to   ? sql`AND t.timestamp <= ${to.toISOString()}`   : sql``}
+    GROUP BY tl.currency
+    HAVING ABS(SUM(CASE WHEN tl.direction = 'in' THEN tl.amount::numeric ELSE -tl.amount::numeric END)) > 0.001
+    ORDER BY ABS(SUM(CASE WHEN tl.direction = 'in' THEN tl.amount::numeric ELSE -tl.amount::numeric END)) DESC
+    LIMIT 8
+  `;
+}
+
+interface PageProps {
+  searchParams: Promise<{ from?: string; to?: string; preset?: string; asOf?: string }>;
+}
+
+export default async function DashboardPage({ searchParams }: PageProps) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -34,18 +62,41 @@ export default async function DashboardPage() {
     .where(eq(organizations.id, orgId)).limit(1);
 
   const now = new Date();
-  const mtdStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const prevMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const params = await searchParams;
+  const preset = params.preset ?? "mtd";
+  const asOfParam = params.asOf ?? "";
+  const asOfDate = asOfParam ? new Date(asOfParam) : undefined;
 
-  // ── First batch: all independent queries ────────────────────────────────────
+  // Resolve date range from params
+  const mtdStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  let rangeFrom: Date | undefined;
+  let rangeTo: Date | undefined;
+
+  if (preset === "all") {
+    rangeFrom = undefined;
+    rangeTo = undefined;
+  } else if (params.from && params.to) {
+    rangeFrom = new Date(`${params.from}T00:00:00Z`);
+    rangeTo   = new Date(`${params.to}T23:59:59Z`);
+  } else {
+    // default: MTD
+    rangeFrom = mtdStart;
+    rangeTo   = now;
+  }
+
+  const fromStr = params.from ?? mtdStart.toISOString().slice(0, 10);
+  const toStr   = params.to   ?? now.toISOString().slice(0, 10);
+
+  // ── All queries in parallel ───────────────────────────────────────────────────
   const [
     [{ txCount }],
     [{ walletCount }],
     [{ clientCount }],
     [{ unmatchedCount }],
     [{ mtdExchangeCount }],
-    mtdRevenueRows,
-    prevRevenueRows,
+    mtdNetFlowRows,
+    allTimeNetFlowRows,
+    exchangeVolumeRows,
     recent,
   ] = await Promise.all([
     db.select({ txCount: sql<number>`count(*)::int` })
@@ -75,42 +126,31 @@ export default async function DashboardPage() {
         gte(transactions.timestamp, mtdStart),
       )),
 
-    // MTD Revenue by currency
-    db.select({
-      currency: transactionLegs.currency,
-      total: sql<string>`SUM(${transactionLegs.amount}::numeric)::text`,
-    })
-      .from(transactionLegs)
-      .innerJoin(transactions, eq(transactions.id, transactionLegs.transactionId))
-      .where(and(
-        eq(transactions.organizationId, orgId),
-        eq(transactionLegs.direction, "in"),
-        eq(transactions.transactionType, "Revenue"),
-        isNull(transactions.deletedAt),
-        gte(transactions.timestamp, mtdStart),
-      ))
-      .groupBy(transactionLegs.currency)
-      .orderBy(sql`SUM(${transactionLegs.amount}::numeric) DESC`)
-      .limit(3),
+    // Period net flow per currency (Exchange only)
+    db.execute(netFlowQuery(orgId, rangeFrom, rangeTo)) as unknown as Promise<Array<{ currency: string; net_flow: string }>>,
 
-    // Prior month Revenue by currency
-    db.select({
-      currency: transactionLegs.currency,
-      total: sql<string>`SUM(${transactionLegs.amount}::numeric)::text`,
-    })
-      .from(transactionLegs)
-      .innerJoin(transactions, eq(transactions.id, transactionLegs.transactionId))
-      .where(and(
-        eq(transactions.organizationId, orgId),
-        eq(transactionLegs.direction, "in"),
-        eq(transactions.transactionType, "Revenue"),
-        isNull(transactions.deletedAt),
-        gte(transactions.timestamp, prevMonthStart),
-        lt(transactions.timestamp, mtdStart),
-      ))
-      .groupBy(transactionLegs.currency)
-      .orderBy(sql`SUM(${transactionLegs.amount}::numeric) DESC`)
-      .limit(3),
+    // All-time net flow per currency (Exchange only)
+    db.execute(netFlowQuery(orgId)) as unknown as Promise<Array<{ currency: string; net_flow: string }>>,
+
+    // Exchange volume per currency (in + out) — filtered by period
+    db.execute(sql`
+      SELECT
+        tl.currency,
+        SUM(CASE WHEN tl.direction = 'in'  THEN tl.amount::numeric ELSE 0 END)::text AS vol_in,
+        SUM(CASE WHEN tl.direction = 'out' THEN tl.amount::numeric ELSE 0 END)::text AS vol_out
+      FROM transaction_legs tl
+      JOIN transactions t ON t.id = tl.transaction_id
+      WHERE t.organization_id = ${orgId}
+        AND t.transaction_type = 'Exchange'
+        AND t.deleted_at IS NULL
+        AND tl.currency IS NOT NULL
+        AND tl.direction IN ('in', 'out')
+        ${rangeFrom ? sql`AND t.timestamp >= ${rangeFrom.toISOString()}` : sql``}
+        ${rangeTo   ? sql`AND t.timestamp <= ${rangeTo.toISOString()}`   : sql``}
+      GROUP BY tl.currency
+      ORDER BY SUM(tl.amount::numeric) DESC
+      LIMIT 12
+    `) as unknown as Promise<Array<{ currency: string; vol_in: string; vol_out: string }>>,
 
     // Recent 5 transactions
     db.select({
@@ -126,33 +166,44 @@ export default async function DashboardPage() {
       .limit(5),
   ]);
 
-  // ── Second batch: depend on recentIds, run in parallel with net positions ──
+  // ── Net positions (depends on nothing above) ─────────────────────────────────
   const recentIds = recent.map((r) => r.id);
   const [netPositionRows, recentLegs] = await Promise.all([
     db.execute(sql`
-      SELECT
-        tl.currency,
-        (
+      SELECT currency, SUM(actual)::text AS actual, SUM(projected)::text AS projected
+      FROM (
+        SELECT
+          tl.currency,
           SUM(CASE WHEN tl.direction = 'in' THEN tl.amount::numeric ELSE 0 END) -
-          SUM(CASE WHEN tl.direction = 'out' THEN tl.amount::numeric ELSE 0 END)
-        )::text AS net
-      FROM transaction_legs tl
-      JOIN transactions t ON t.id = tl.transaction_id
-      WHERE t.organization_id = ${orgId}
-        AND t.deleted_at IS NULL
-        AND tl.currency IS NOT NULL
-        AND tl.direction IN ('in', 'out')
-      GROUP BY tl.currency
-      HAVING ABS(
-        SUM(CASE WHEN tl.direction = 'in' THEN tl.amount::numeric ELSE 0 END) -
-        SUM(CASE WHEN tl.direction = 'out' THEN tl.amount::numeric ELSE 0 END)
-      ) > 0.0001
-      ORDER BY ABS(
-        SUM(CASE WHEN tl.direction = 'in' THEN tl.amount::numeric ELSE 0 END) -
-        SUM(CASE WHEN tl.direction = 'out' THEN tl.amount::numeric ELSE 0 END)
-      ) DESC
+          SUM(CASE WHEN tl.direction IN ('out', 'fee') AND t.status IS DISTINCT FROM 'in_process'
+                   THEN tl.amount::numeric ELSE 0 END) AS actual,
+          SUM(CASE WHEN tl.direction = 'in'            THEN tl.amount::numeric ELSE 0 END) -
+          SUM(CASE WHEN tl.direction IN ('out', 'fee') THEN tl.amount::numeric ELSE 0 END) AS projected
+        FROM transaction_legs tl
+        JOIN transactions t ON t.id = tl.transaction_id
+        WHERE t.organization_id = ${orgId}
+          AND t.deleted_at IS NULL
+          AND tl.currency IS NOT NULL
+          AND tl.direction IN ('in', 'out', 'fee')
+          ${asOfDate ? sql`AND t.timestamp <= ${asOfDate.toISOString()}` : sql``}
+        GROUP BY tl.currency
+
+        UNION ALL
+
+        SELECT
+          currency,
+          SUM(CASE WHEN type = 'deposit' THEN amount::numeric ELSE -amount::numeric END) AS actual,
+          SUM(CASE WHEN type = 'deposit' THEN amount::numeric ELSE -amount::numeric END) AS projected
+        FROM ${cashOperations}
+        WHERE organization_id = ${orgId}
+          ${asOfDate ? sql`AND created_at <= ${asOfDate.toISOString()}` : sql``}
+        GROUP BY currency
+      ) combined
+      GROUP BY currency
+      HAVING ABS(SUM(actual)) > 0.0001 OR ABS(SUM(projected)) > 0.0001
+      ORDER BY ABS(SUM(projected)) DESC
       LIMIT 8
-    `) as unknown as Promise<Array<{ currency: string; net: string }>>,
+    `) as unknown as Promise<Array<{ currency: string; actual: string; projected: string }>>,
 
     recentIds.length > 0
       ? db.select({
@@ -160,9 +211,7 @@ export default async function DashboardPage() {
           direction: transactionLegs.direction,
           amount: transactionLegs.amount,
           currency: transactionLegs.currency,
-        })
-        .from(transactionLegs)
-        .where(inArray(transactionLegs.transactionId, recentIds))
+        }).from(transactionLegs).where(inArray(transactionLegs.transactionId, recentIds))
       : Promise.resolve([]),
   ]);
 
@@ -173,20 +222,21 @@ export default async function DashboardPage() {
     legsByTx.set(l.transactionId, arr);
   }
 
-  // Revenue month-over-month comparison
-  const topRevCurrency = mtdRevenueRows[0]?.currency ?? null;
-  const mtdRevTotal = parseFloat(mtdRevenueRows[0]?.total ?? "0");
-  const prevRevRow = prevRevenueRows.find((r) => r.currency === topRevCurrency);
-  const prevRevTotal = parseFloat(prevRevRow?.total ?? "0");
-  const revChangePct = prevRevTotal > 0 ? ((mtdRevTotal - prevRevTotal) / prevRevTotal) * 100 : null;
+  // Build all-time lookup for comparison in the card
+  const allTimeByCurrency = new Map(allTimeNetFlowRows.map((r) => [r.currency, parseFloat(r.net_flow)]));
 
   const monthName = now.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+
+  const fmt = (v: number) => {
+    const abs = Math.abs(v);
+    return (v >= 0 ? "+" : "") + v.toLocaleString(undefined, { maximumFractionDigits: abs > 10000 ? 0 : abs > 1 ? 2 : 6 });
+  };
 
   return (
     <div className="flex flex-col gap-5 p-6">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold" style={{ color: "var(--text-1)" }}>
             {org?.name ?? "Dashboard"}
@@ -195,40 +245,54 @@ export default async function DashboardPage() {
             {monthName} {now.getUTCFullYear()} · {txCount.toLocaleString()} transactions
           </p>
         </div>
-        <Link
-          href="/app/analytics"
-          className="h-7 px-3 flex items-center rounded text-xs font-medium transition-colors"
-          style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)", color: "var(--text-4)" }}
-        >
-          Full analytics →
-        </Link>
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          <DashboardFilters from={fromStr} to={toStr} preset={preset} />
+          <Link
+            href="/app/analytics"
+            className="h-6 px-2.5 flex items-center rounded text-xs font-medium transition-colors"
+            style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)", color: "var(--text-4)" }}
+          >
+            Analytics →
+          </Link>
+        </div>
       </div>
 
       {/* ── KPI cards ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-4 gap-3">
 
-        {/* MTD Revenue */}
+        {/* Net Exchange P&L */}
         <div className="rounded-xl p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--accent)" }}>
-          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>MTD Revenue</p>
-          {topRevCurrency ? (
-            <>
-              <p className="mt-2.5 leading-none">
-                <span className="font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium" style={{ color: "var(--accent)" }}>
-                  {mtdRevTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </span>
-                <span className="ml-1.5 text-sm font-medium" style={{ color: "var(--accent)" }}>{topRevCurrency}</span>
-              </p>
-              {revChangePct !== null ? (
-                <p className="mt-1.5 text-[11px] font-mono" style={{ color: revChangePct >= 0 ? "var(--accent)" : "var(--red)" }}>
-                  {revChangePct >= 0 ? "▲" : "▼"} {Math.abs(revChangePct).toFixed(1)}% vs prior month
-                </p>
-              ) : (
-                <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>first month on record</p>
-              )}
-            </>
+          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
+            Net P&L — {preset === "all" ? "all-time" : preset === "custom" ? `${fromStr} → ${toStr}` : preset.toUpperCase()}
+          </p>
+          {mtdNetFlowRows.length === 0 ? (
+            <p className="mt-2.5 text-sm" style={{ color: "var(--text-3)" }}>No exchanges this month</p>
           ) : (
-            <p className="mt-2.5 text-sm" style={{ color: "var(--text-3)" }}>No revenue this month</p>
+            <div className="mt-2 flex flex-col gap-0.5">
+              {mtdNetFlowRows.slice(0, 4).map((r) => {
+                const mtd = parseFloat(r.net_flow);
+                const allTime = allTimeByCurrency.get(r.currency) ?? 0;
+                return (
+                  <div key={r.currency} className="flex items-baseline justify-between gap-2">
+                    <span
+                      className="font-[family-name:var(--font-ibm-plex-mono)] text-lg font-medium leading-tight"
+                      style={{ color: mtd >= 0 ? "var(--accent)" : "var(--red)" }}
+                    >
+                      {fmt(mtd)}
+                      <span className="ml-1 text-xs font-medium" style={{ color: "var(--text-4)" }}>{r.currency}</span>
+                    </span>
+                    <span className="text-[10px] font-mono tabular-nums shrink-0" style={{ color: "var(--text-4)" }}
+                      title="All-time">
+                      {fmt(allTimeByCurrency.get(r.currency) ?? 0)} all
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           )}
+          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+            net inventory change · Exchange
+          </p>
         </div>
 
         {/* MTD Exchanges */}
@@ -281,37 +345,117 @@ export default async function DashboardPage() {
       {/* ── Net positions ───────────────────────────────────────────────────── */}
       {netPositionRows.length > 0 && (
         <div className="rounded-xl p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-3 mb-3">
-            <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
-              Net Positions
-            </p>
-            <span className="text-[10px]" style={{ color: "var(--text-3)" }}>in − out · all-time</span>
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
+                Net Positions
+              </p>
+              {asOfParam && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: "var(--amber)", backgroundColor: "color-mix(in srgb, var(--amber) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--amber) 25%, transparent)" }}>
+                  snapshot: {asOfParam.replace("T", " ")}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 text-[10px]" style={{ color: "var(--text-3)" }}>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 rounded-sm" style={{ backgroundColor: "var(--amber)", opacity: 0.7 }} />
+                  actual
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 rounded-sm" style={{ backgroundColor: "var(--accent)", opacity: 0.7 }} />
+                  projected
+                </span>
+              </div>
+              <NetPositionFilter asOf={asOfParam} />
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             {netPositionRows.map((pos) => {
-              const net = parseFloat(pos.net);
-              const isPositive = net >= 0;
-              const absNet = Math.abs(net);
-              const decimals = absNet > 10000 ? 0 : absNet > 1 ? 2 : 6;
+              const actual    = parseFloat(pos.actual);
+              const projected = parseFloat(pos.projected);
+              const hasDiff   = Math.abs(actual - projected) > 0.0001;
               return (
-                <div
-                  key={pos.currency}
-                  className="flex items-baseline gap-1.5 rounded-lg px-3 py-1.5"
-                  style={{
-                    backgroundColor: isPositive ? "var(--green-chip-bg)" : "var(--red-chip-bg)",
-                    border: `1px solid ${isPositive ? "var(--green-border-lo)" : "var(--red-border-lo)"}`,
-                  }}
-                >
-                  <span
-                    className="font-[family-name:var(--font-ibm-plex-mono)] text-sm font-medium"
-                    style={{ color: isPositive ? "var(--accent)" : "var(--red)" }}
-                  >
-                    {isPositive ? "+" : ""}{net.toLocaleString(undefined, { maximumFractionDigits: decimals })}
-                  </span>
-                  <span className="text-xs font-medium" style={{ color: "var(--text-4)" }}>{pos.currency}</span>
+                <div key={pos.currency} className="flex items-center gap-1.5">
+                  {hasDiff ? (
+                    <>
+                      <div className="flex items-baseline gap-1.5 rounded-lg px-3 py-1.5"
+                        style={{ backgroundColor: "color-mix(in srgb, var(--amber) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--amber) 25%, transparent)" }}>
+                        <span className="font-[family-name:var(--font-ibm-plex-mono)] text-sm font-medium" style={{ color: "var(--amber)" }}>{fmt(actual)}</span>
+                        <span className="text-xs font-medium" style={{ color: "var(--text-4)" }}>{pos.currency}</span>
+                      </div>
+                      <span className="text-[10px]" style={{ color: "var(--text-3)" }}>→</span>
+                      <div className="flex items-baseline gap-1.5 rounded-lg px-3 py-1.5"
+                        style={{ backgroundColor: "var(--green-chip-bg)", border: "1px solid var(--green-border-lo)" }}>
+                        <span className="font-[family-name:var(--font-ibm-plex-mono)] text-sm font-medium" style={{ color: "var(--accent)" }}>{fmt(projected)}</span>
+                        <span className="text-xs font-medium" style={{ color: "var(--text-4)" }}>{pos.currency}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-baseline gap-1.5 rounded-lg px-3 py-1.5"
+                      style={{ backgroundColor: projected >= 0 ? "var(--green-chip-bg)" : "var(--red-chip-bg)", border: `1px solid ${projected >= 0 ? "var(--green-border-lo)" : "var(--red-border-lo)"}` }}>
+                      <span className="font-[family-name:var(--font-ibm-plex-mono)] text-sm font-medium" style={{ color: projected >= 0 ? "var(--accent)" : "var(--red)" }}>{fmt(projected)}</span>
+                      <span className="text-xs font-medium" style={{ color: "var(--text-4)" }}>{pos.currency}</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Exchange Volume by currency ─────────────────────────────────────── */}
+      {exchangeVolumeRows.length > 0 && (
+        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between px-4 py-3"
+            style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+            <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
+              Exchange Volume
+            </p>
+            <p className="text-[10px]" style={{ color: "var(--text-3)" }}>all-time · income + outcome per currency</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs" style={{ backgroundColor: "var(--bg)" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  <th className="px-4 py-2 text-left font-medium" style={{ color: "var(--text-4)" }}>Currency</th>
+                  <th className="px-4 py-2 text-right font-medium" style={{ color: "var(--accent)" }}>Volume In</th>
+                  <th className="px-4 py-2 text-right font-medium" style={{ color: "var(--red)" }}>Volume Out</th>
+                  <th className="px-4 py-2 text-right font-medium" style={{ color: "var(--text-4)" }}>Total</th>
+                  <th className="px-4 py-2 text-right font-medium" style={{ color: "var(--text-4)" }}>Net (all-time)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exchangeVolumeRows.map((row, i) => {
+                  const volIn  = parseFloat((row as { vol_in: string }).vol_in  ?? "0");
+                  const volOut = parseFloat((row as { vol_out: string }).vol_out ?? "0");
+                  const total  = volIn + volOut;
+                  const net    = allTimeByCurrency.get((row as { currency: string }).currency ?? "") ?? (volIn - volOut);
+                  const isLast = i === exchangeVolumeRows.length - 1;
+                  return (
+                    <tr key={row.currency} style={{ borderBottom: isLast ? "none" : "1px solid var(--border)" }}>
+                      <td className="px-4 py-2.5">
+                        <span className="font-mono font-medium" style={{ color: "var(--text-1)" }}>{(row as { currency: string }).currency}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono" style={{ color: "var(--accent)" }}>
+                        {volIn > 0 ? fmt(volIn) : <span style={{ color: "var(--text-4)" }}>—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono" style={{ color: "var(--red)" }}>
+                        {volOut > 0 ? fmt(volOut) : <span style={{ color: "var(--text-4)" }}>—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono" style={{ color: "var(--text-2)" }}>
+                        {fmt(total)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono"
+                        style={{ color: net >= 0 ? "var(--accent)" : "var(--red)" }}>
+                        {fmt(net)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -332,7 +476,7 @@ export default async function DashboardPage() {
             <tbody>
               {recent.map((tx, i) => {
                 const legs = legsByTx.get(tx.id) ?? [];
-                const inLeg = legs.find((l) => l.direction === "in");
+                const inLeg  = legs.find((l) => l.direction === "in");
                 const outLeg = legs.find((l) => l.direction === "out");
                 const typeColor = tx.transactionType
                   ? (TYPE_COLORS[tx.transactionType] ?? "var(--text-2)")
@@ -344,10 +488,8 @@ export default async function DashboardPage() {
                     </td>
                     <td className="px-4 py-3" style={{ width: "120px" }}>
                       {tx.transactionType && (
-                        <span
-                          className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium"
-                          style={{ backgroundColor: typeColor + "22", color: typeColor }}
-                        >
+                        <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium"
+                          style={{ backgroundColor: typeColor + "22", color: typeColor }}>
                           {tx.transactionType}
                         </span>
                       )}
@@ -358,9 +500,7 @@ export default async function DashboardPage() {
                           +{Number(inLeg.amount).toLocaleString(undefined, { maximumFractionDigits: 4 })} {inLeg.currency}
                         </span>
                       )}
-                      {inLeg && outLeg && (
-                        <span className="mx-1.5" style={{ color: "var(--text-3)" }}>·</span>
-                      )}
+                      {inLeg && outLeg && <span className="mx-1.5" style={{ color: "var(--text-3)" }}>·</span>}
                       {outLeg && (
                         <span style={{ color: "var(--red)" }}>
                           -{Number(outLeg.amount).toLocaleString(undefined, { maximumFractionDigits: 4 })} {outLeg.currency}

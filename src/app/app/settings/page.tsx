@@ -9,6 +9,7 @@ import {
   addCurrency, editCurrency, deleteCurrency,
   addTransactionType, editTransactionType, deleteTransactionType,
 } from "./actions";
+import SecurityTab from "./SecurityTab";
 
 interface PageProps { searchParams: Promise<{ tab?: string; auditPage?: string }> }
 
@@ -36,6 +37,12 @@ const ACTION_LABEL: Record<string,string> = {
   member_role_changed:"Changed role",
   member_removed:"Removed member",
   member_accepted_invite:"Joined via invite",
+  transaction_created:"Created transaction",
+  transaction_updated:"Edited transaction",
+  transaction_deleted:"Deleted transaction",
+  bulk_type_set:"Bulk set type",
+  bulk_client_assigned:"Bulk assigned client",
+  bulk_deleted:"Bulk deleted",
 };
 
 const TABS = [
@@ -44,6 +51,7 @@ const TABS = [
   { id:"currencies", label:"Currencies",  icon:"◎" },
   { id:"types",      label:"Tx Types",    icon:"◇" },
   { id:"audit",      label:"Audit Log",   icon:"≡" },
+  { id:"security",   label:"Security",    icon:"⚿" },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
@@ -409,6 +417,14 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                         <span className="flex-1 text-xs" style={{ color:"var(--text-3)" }}>{c.name ?? "—"}</span>
                       )}
                       {isAdmin && (
+                        <form action={editCurrency} title="Move to fiat">
+                          <input type="hidden" name="currency_id" value={c.id} />
+                          <input type="hidden" name="type" value="fiat" />
+                          <input type="hidden" name="name" value={c.name ?? ""} />
+                          <GhostBtn label="→ fiat" />
+                        </form>
+                      )}
+                      {isAdmin && (
                         <form action={deleteCurrency}>
                           <input type="hidden" name="currency_id" value={c.id} />
                           <GhostBtn label="×" danger />
@@ -438,6 +454,14 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                         </form>
                       ) : (
                         <span className="flex-1 text-xs" style={{ color:"var(--text-3)" }}>{c.name ?? "—"}</span>
+                      )}
+                      {isAdmin && (
+                        <form action={editCurrency} title="Move to crypto">
+                          <input type="hidden" name="currency_id" value={c.id} />
+                          <input type="hidden" name="type" value="crypto" />
+                          <input type="hidden" name="name" value={c.name ?? ""} />
+                          <GhostBtn label="→ crypto" />
+                        </form>
                       )}
                       {isAdmin && (
                         <form action={deleteCurrency}>
@@ -544,32 +568,73 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                     let details: Record<string,string> = {};
                     try { details = JSON.parse(log.details ?? "{}"); } catch { /* */ }
                     const isLast = i === logs.length - 1;
+                    const isTxAction = log.action.startsWith("transaction_");
+                    const actionColor = log.action === "transaction_deleted"
+                      ? "var(--red)"
+                      : log.action === "transaction_created"
+                      ? "var(--accent)"
+                      : "var(--text-2)";
                     return (
                       <div key={log.id} className="flex gap-4">
                         {/* timeline */}
-                        <div className="flex flex-col items-center">
-                          <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
-                            style={{ backgroundColor:"var(--inner-border)" }} />
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className="w-1.5 h-1.5 rounded-full mt-[5px]"
+                            style={{ backgroundColor: isTxAction ? actionColor : "var(--inner-border)" }} />
                           {!isLast && <div className="w-px flex-1 mt-1" style={{ backgroundColor:"var(--surface-lo)" }} />}
                         </div>
                         <div className="pb-5 flex-1 min-w-0">
-                          <div className="flex items-baseline gap-3 flex-wrap">
-                            <span className="text-xs font-medium text-slate-400">
+                          {/* action + legs on one line */}
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="text-xs font-semibold" style={{ color: isTxAction ? actionColor : "var(--text-2)" }}>
                               {ACTION_LABEL[log.action] ?? log.action}
                             </span>
-                            {Object.entries(details).length > 0 && (
-                              <span className="text-xs font-mono" style={{ color:"var(--text-3)" }}>
-                                {Object.entries(details).map(([k,v]) => `${k}=${v}`).join(" ")}
+                            {details.type && details.type !== "—" && (
+                              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                style={{ backgroundColor:"var(--raised-hi)", color:"var(--text-2)", border:"1px solid var(--inner-border)" }}>
+                                {details.type}
+                              </span>
+                            )}
+                            {details.legs && (
+                              <span className="text-xs font-mono" style={{ color:"var(--text-1)" }}>
+                                {details.legs}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 mt-0.5">
-                            <span className="text-xs" style={{ color:"var(--text-3)" }}>
+                          {/* secondary details row */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                            <span className="text-xs font-medium" style={{ color:"var(--text-3)" }}>
                               {log.userEmail ?? (log.userId ? log.userId.slice(0,8)+"…" : "—")}
                             </span>
                             <span className="text-xs font-mono" style={{ color:"var(--inner-border)" }}>
                               {new Date(log.createdAt).toLocaleString()}
                             </span>
+                            {details.tx && (
+                              <span className="text-[10px] font-mono" style={{ color:"var(--text-3)" }}>
+                                tx:{details.tx}…
+                              </span>
+                            )}
+                            {details.date && (
+                              <span className="text-[10px] font-mono" style={{ color:"var(--text-3)" }}>
+                                {details.date}
+                              </span>
+                            )}
+                            {details.client && (
+                              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px]"
+                                style={{ backgroundColor:"var(--blue-chip-bg)", color:"var(--blue)" }}>
+                                {details.client}
+                              </span>
+                            )}
+                            {details.comment && (
+                              <span className="text-[10px] italic" style={{ color:"var(--text-3)" }}>
+                                &ldquo;{details.comment}&rdquo;
+                              </span>
+                            )}
+                            {/* fallback for non-tx actions */}
+                            {!isTxAction && Object.keys(details).length > 0 && (
+                              <span className="text-xs font-mono" style={{ color:"var(--text-3)" }}>
+                                {Object.entries(details).map(([k,v]) => `${k}=${v}`).join("  ")}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -600,6 +665,13 @@ export default async function SettingsPage({ searchParams }: PageProps) {
             </section>
             );
           })()}
+
+          {/* ── SECURITY ──────────────────────────────────────── */}
+          {activeTab === "security" && (
+            <section>
+              <SecurityTab />
+            </section>
+          )}
 
         </div>
       </main>

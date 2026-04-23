@@ -87,6 +87,7 @@ function CurrencyCombobox({
       />
       {open && filtered.length > 0 && (
         <div className="absolute left-0 z-50 mt-1.5 min-w-[96px]" style={{ top: "100%", ...dropdownPanel }}>
+          <div className="max-h-36 overflow-y-auto">
           {filtered.map((c) => {
             const isSelected = c === value;
             const isHovered = c === hovered;
@@ -111,6 +112,7 @@ function CurrencyCombobox({
               </button>
             );
           })}
+          </div>
         </div>
       )}
     </div>
@@ -230,7 +232,7 @@ function ClientField({ clients }: { clients: ClientOption[] }) {
         {/* Dropdown */}
         {open && (
           <div className="absolute left-0 z-50 mt-1.5 w-[240px]" style={{ top: "100%", ...dropdownPanel }}>
-            <div className="max-h-52 overflow-y-auto">
+            <div className="max-h-36 overflow-y-auto">
               {filtered.length === 0 && !query.trim() && (
                 <p className="px-3 py-3 text-xs" style={{ color: "var(--text-3)" }}>No clients yet</p>
               )}
@@ -406,6 +408,17 @@ export default function ManualTransactionForm({ txTypes, currencyCodes, clients 
             style={{ borderColor: "var(--inner-border)", backgroundColor: "transparent", color: "var(--text-1)" }}>
             <option value="">— none —</option>
             {txTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs" style={{ color: "var(--text-3)" }}>Status</span>
+          <select name="status" className={inputCls}
+            style={{ borderColor: "var(--inner-border)", backgroundColor: "transparent", color: "var(--text-1)" }}>
+            <option value="">— none —</option>
+            <option value="done">Done</option>
+            <option value="in_process">In process</option>
+            <option value="failed">Failed</option>
+            <option value="unknown">Unknown</option>
           </select>
         </label>
         <label className="flex flex-col gap-1">
