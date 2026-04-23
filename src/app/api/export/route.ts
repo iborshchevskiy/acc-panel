@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, isNull, and } from "drizzle-orm";
 
 const FIELDNAMES = ["Date","Type","Transaction Type","Income Amount","Income Currency","Outcome Amount","Outcome Currency","Fee","Fee Currency","TxID","From","To","Comment","Location"];
 
@@ -19,12 +19,12 @@ export async function GET(req: NextRequest) {
   if (!membership) return NextResponse.json({ error: "No org" }, { status: 403 });
 
   const txRows = await db.select().from(transactions)
-    .where(eq(transactions.organizationId, membership.organizationId))
+    .where(and(eq(transactions.organizationId, membership.organizationId), isNull(transactions.deletedAt)))
     .orderBy(desc(transactions.timestamp));
 
   const legs = await db.select().from(transactionLegs)
     .innerJoin(transactions, eq(transactions.id, transactionLegs.transactionId))
-    .where(eq(transactions.organizationId, membership.organizationId));
+    .where(and(eq(transactions.organizationId, membership.organizationId), isNull(transactions.deletedAt)));
 
   const legsByTx = new Map<string, typeof legs>();
   for (const leg of legs) {

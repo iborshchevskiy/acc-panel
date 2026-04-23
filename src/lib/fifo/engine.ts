@@ -74,6 +74,9 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
 
   // pair → queue of lots: [remaining, costRate, acquiredAt, txId, originalAmount]
   const queues = new Map<string, Array<[number, number, Date, string, number]>>();
+  // pair → short positions: sells with no matching lots yet, waiting for a subsequent buy
+  // [remaining, proceedsRate, disposedAt, txId]
+  const shortQueues = new Map<string, Array<[number, number, Date, string]>>();
   const realized = new Map<string, Disposal[]>();
   const acquired = new Map<string, number>();
   const disposed = new Map<string, number>();
@@ -105,6 +108,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
       let toDispose = outAmt;
       const queue = queues.get(pair)!;
 
+      // 1. Match against existing lots (FIFO order)
       while (toDispose > 1e-9 && queue.length > 0) {
         const lot = queue[0];
         const consumed = Math.min(lot[R], toDispose);
@@ -123,41 +127,63 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
         if (lot[R] <= 1e-9) queue.shift();
       }
 
-      // Short sell / no remaining lots — proceeds with zero cost basis
+      // 2. No lots available — record as a short position.
+      //    Gain is deferred until the position is covered by a subsequent BUY.
+      //    This is the correct model for exchange offices that sell before sourcing inventory.
       if (toDispose > 1e-9) {
-        realized.get(pair)!.push({
-          txId: row.id,
-          disposedAt: row.timestamp,
-          amount: toDispose,
-          proceedsRate,
-          costRate: 0,
-          gain: proceedsRate * toDispose,
-          gainCurrency: incCur,
-          lotAcquiredAt: null,
-        });
+        if (!shortQueues.has(pair)) shortQueues.set(pair, []);
+        shortQueues.get(pair)!.push([toDispose, proceedsRate, row.timestamp, row.id]);
       }
     } else if (outFiat && !incFiat) {
       // BOUGHT crypto → outcome=fiat, income=crypto
       const pair = `${incCur}/${outCur}`;
       const costRate = outAmt / incAmt;
+      let toAcquire = incAmt;
 
       if (!queues.has(pair)) queues.set(pair, []);
-      // FIX: store originalAmount (incAmt) as 5th element — not derived from total acquired
-      queues.get(pair)!.push([incAmt, costRate, row.timestamp, row.id, incAmt]);
+      if (!realized.has(pair)) realized.set(pair, []);
       acquired.set(pair, (acquired.get(pair) ?? 0) + incAmt);
       tradeCounts.set(pair, (tradeCounts.get(pair) ?? 0) + 1);
+
+      // 1. Close outstanding short positions first (exchange sold before sourcing inventory).
+      //    Gain = (sell rate − buy rate) × amount — the actual spread earned.
+      if (shortQueues.has(pair)) {
+        const shorts = shortQueues.get(pair)!;
+        while (toAcquire > 1e-9 && shorts.length > 0) {
+          const short = shorts[0];
+          const consumed = Math.min(short[0], toAcquire);
+          realized.get(pair)!.push({
+            txId: short[3],         // original SELL tx
+            disposedAt: short[2],   // when the sell happened
+            amount: consumed,
+            proceedsRate: short[1], // sell rate (known at sell time)
+            costRate,               // buy rate (known now, when inventory is sourced)
+            gain: (short[1] - costRate) * consumed,
+            gainCurrency: outCur,
+            lotAcquiredAt: row.timestamp, // when the short was covered
+          });
+          short[0] -= consumed;
+          toAcquire -= consumed;
+          if (short[0] <= 1e-9) shorts.shift();
+        }
+      }
+
+      // 2. Any remaining amount not used to cover shorts → add to lot queue
+      if (toAcquire > 1e-9) {
+        queues.get(pair)!.push([toAcquire, costRate, row.timestamp, row.id, toAcquire]);
+      }
     }
   }
 
   const pairs: Record<string, PairResult> = {};
-  const allPairs = new Set([...queues.keys(), ...realized.keys()]);
+  const allPairs = new Set([...queues.keys(), ...realized.keys(), ...shortQueues.keys()]);
 
   for (const pair of allPairs) {
     const [crypto, fiat] = pair.split("/");
     const queue = queues.get(pair) ?? [];
+    const shorts = shortQueues.get(pair) ?? [];
     const realizedList = realized.get(pair) ?? [];
 
-    // FIX: use lot[O] (originalAmount) not total acquired for this pair
     const lots: TaxLot[] = queue.map((q) => ({
       txId: q[T],
       acquiredAt: q[D],
@@ -166,10 +192,14 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
       costRate: q[C],
     }));
 
-    const currentHolding = queue.reduce((s, q) => s + q[R], 0);
+    const lotHolding = queue.reduce((s, q) => s + q[R], 0);
+    // Outstanding shorts reduce effective holding (we owe this crypto to the market)
+    const shortPosition = shorts.reduce((s, sh) => s + sh[0], 0);
+    const currentHolding = lotHolding - shortPosition;
+
     const totalRealizedGain = realizedList.reduce((s, d) => s + d.gain, 0);
     const totalLotValue = queue.reduce((s, q) => s + q[R] * q[C], 0);
-    const avgCost = currentHolding > 1e-9 ? totalLotValue / currentHolding : null;
+    const avgCost = lotHolding > 1e-9 ? totalLotValue / lotHolding : null;
 
     pairs[pair] = {
       pair,

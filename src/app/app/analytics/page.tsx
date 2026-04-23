@@ -4,10 +4,12 @@ import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNull, gte, lte } from "drizzle-orm";
+import RefreshButton from "@/components/refresh-button";
+import CustomRangePicker from "./CustomRangePicker";
 
 interface PageProps {
-  searchParams: Promise<{ bucket?: string }>;
+  searchParams: Promise<{ bucket?: string; from?: string; to?: string }>;
 }
 
 // ── SQL-level aggregation helpers ─────────────────────────────────────────────
@@ -36,37 +38,44 @@ function buildPeriodLabel(period: string, bucket: string): string {
 
 export default async function AnalyticsPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const bucket = (params.bucket ?? "month") as "day" | "week" | "month";
+  const isCustom = params.bucket === "custom";
+  const bucket = isCustom ? "day" : (params.bucket ?? "month") as "day" | "week" | "month";
+  const customFrom = params.from ?? "";
+  const customTo = params.to ?? "";
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [membership] = await db.select({ organizationId: organizationMembers.organizationId })
-    .from(organizationMembers).where(eq(organizationMembers.userId, user.id)).limit(1);
+  const [membership] = await db
+    .select({ organizationId: organizationMembers.organizationId })
+    .from(organizationMembers)
+    .where(eq(organizationMembers.userId, user.id)).limit(1);
   if (!membership) redirect("/app/onboarding");
   const orgId = membership.organizationId;
+
+  // ── Date range filter (for custom bucket) ────────────────────────────────
+  const dateConditions = isCustom && customFrom && customTo
+    ? [gte(transactions.timestamp, new Date(customFrom)), lte(transactions.timestamp, new Date(customTo + "T23:59:59"))]
+    : [];
 
   // ── Summary counts (cheap COUNT queries) ─────────────────────────────────
   const [[{ totalTxs }], [{ exchangeTxs }]] = await Promise.all([
     db.select({ totalTxs: sql<number>`count(*)::int` }).from(transactions)
-      .where(eq(transactions.organizationId, orgId)),
+      .where(and(eq(transactions.organizationId, orgId), isNull(transactions.deletedAt), ...dateConditions)),
     db.select({ exchangeTxs: sql<number>`count(*)::int` }).from(transactions)
-      .where(and(eq(transactions.organizationId, orgId), eq(transactions.transactionType, "Exchange"))),
+      .where(and(eq(transactions.organizationId, orgId), eq(transactions.transactionType, "Exchange"), isNull(transactions.deletedAt), ...dateConditions)),
   ]);
 
   // ── Fiat set for this org ────────────────────────────────────────────────
   const fiatRows = await db.select({ code: currencies.code }).from(currencies)
     .where(and(eq(currencies.organizationId, orgId), eq(currencies.type, "fiat")));
   const fiatList = fiatRows.map((r) => r.code);
-  const fiatSet = new Set(fiatList);
 
   // ── Period P&L — aggregated in SQL, returns O(periods × currencies) rows ─
-  const dateTruncExpr = bucket === "month"
-    ? sql`TO_CHAR(DATE_TRUNC('month', ${transactions.timestamp}), 'YYYY-MM')`
-    : bucket === "week"
-    ? sql`TO_CHAR(DATE_TRUNC('week', ${transactions.timestamp}), 'YYYY-MM-DD')`
-    : sql`TO_CHAR(DATE_TRUNC('day', ${transactions.timestamp}), 'YYYY-MM-DD')`;
+  const dateTruncFn = bucket === "month" ? "month" : bucket === "week" ? "week" : "day";
+  const dateTruncFmt = bucket === "month" ? "YYYY-MM" : "YYYY-MM-DD";
+  const dateTruncExpr = sql.raw(`TO_CHAR(DATE_TRUNC('${dateTruncFn}', t.timestamp), '${dateTruncFmt}')`);
 
   const periodAggs = await db.execute(sql`
     SELECT
@@ -79,9 +88,12 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     FROM ${transactions} t
     JOIN ${transactionLegs} tl ON tl.transaction_id = t.id
     WHERE t.organization_id = ${orgId}
+      AND t.deleted_at IS NULL
       AND t.transaction_type IN ('Exchange', 'Revenue')
       AND tl.direction IN ('in', 'out')
       AND tl.currency IS NOT NULL
+      ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
+      ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
     GROUP BY 1, 2, 3, 4
     ORDER BY 1
   `) as unknown as PeriodAgg[];
@@ -174,7 +186,10 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       JOIN ${transactionLegs} tl_in  ON tl_in.transaction_id  = t.id AND tl_in.direction  = 'in'
       JOIN ${transactionLegs} tl_out ON tl_out.transaction_id = t.id AND tl_out.direction = 'out'
       WHERE t.organization_id = ${orgId}
+        AND t.deleted_at IS NULL
         AND t.transaction_type = 'Exchange'
+        ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
+        ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
         AND (
           (tl_in.currency = ANY(${fiatArray}) AND tl_out.currency != ANY(${fiatArray}))
           OR
@@ -187,9 +202,6 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       LIMIT 20
     `) as unknown as SpreadAgg[];
   }
-
-  // Remove unused fiatSet after SQL migration (kept for reference)
-  void fiatSet;
 
   // Coalesce buy+sell rows per pair
   const spreadMap = new Map<string, {
@@ -225,7 +237,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     })
     .from(transactionLegs)
     .innerJoin(transactions, eq(transactions.id, transactionLegs.transactionId))
-    .where(and(eq(transactions.organizationId, orgId), eq(transactionLegs.direction, "fee")))
+    .where(and(eq(transactions.organizationId, orgId), eq(transactionLegs.direction, "fee"), isNull(transactions.deletedAt), ...dateConditions))
     .groupBy(transactionLegs.currency);
 
 
@@ -236,16 +248,22 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
           <h1 className="text-lg font-semibold text-slate-100">Analytics</h1>
           <p className="text-sm text-slate-500">{totalTxs.toLocaleString()} transactions</p>
         </div>
+        <RefreshButton />
         <div className="flex gap-1 rounded-lg p-1" style={{ backgroundColor: "var(--raised-hi)" }}>
           {(["day", "week", "month"] as const).map((b) => (
             <a key={b} href={`?bucket=${b}`}
               className="h-7 px-3 flex items-center rounded text-xs font-medium transition-colors capitalize"
-              style={bucket === b
+              style={!isCustom && bucket === b
                 ? { backgroundColor: "var(--accent)", color: "var(--surface)" }
                 : { color: "var(--text-2)" }}>
               {b}
             </a>
           ))}
+          <CustomRangePicker
+            active={isCustom}
+            initialFrom={customFrom}
+            initialTo={customTo}
+          />
         </div>
       </div>
 
@@ -268,7 +286,11 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       {/* Period P&L table */}
       <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
         <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
-          <h2 className="text-sm font-medium text-slate-300">P&L by {bucket}</h2>
+          <h2 className="text-sm font-medium text-slate-300">
+            {isCustom && customFrom && customTo
+              ? `P&L: ${customFrom} – ${customTo}`
+              : `P&L by ${bucket}`}
+          </h2>
         </div>
         {periods.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-600">No Exchange transactions found</div>
@@ -279,7 +301,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Period</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Trades</th>
                 {topCurrencies.map((c) => (
-                  <th key={c} className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">P&L {c}</th>
+                  <th key={c} className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Net {c}</th>
                 ))}
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Volume</th>
               </tr>

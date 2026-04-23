@@ -29,6 +29,7 @@ export const transactions = pgTable(
     toAddress: text("to_address"),
     location: text("location"), // wallet address or named account
     comment: text("comment"),
+    status: text("status"), // 'done' | 'in_process' | 'failed' | 'unknown'
     isMatched: boolean("is_matched").default(false).notNull(),
     raw: jsonb("raw"), // original CSV row preserved verbatim
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -43,6 +44,11 @@ export const transactions = pgTable(
     index("transactions_org_ts_idx").on(t.organizationId, t.timestamp),
     // Composite: type filter (org + type)
     index("transactions_org_type_idx").on(t.organizationId, t.transactionType),
+    // Soft-delete: nearly every query adds `AND deleted_at IS NULL`
+    // Covering the org+deleted composite avoids a post-filter scan on large tables
+    index("transactions_org_deleted_idx").on(t.organizationId, t.deletedAt),
+    // Dashboard unmatched count: org + isMatched + deletedAt
+    index("transactions_org_matched_idx").on(t.organizationId, t.isMatched, t.deletedAt),
   ]
 );
 

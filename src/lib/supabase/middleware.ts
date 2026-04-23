@@ -33,12 +33,14 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
+  // ── Use getSession() for routing decisions — reads cookie locally, no network round-trip.
+  // getUser() (remote validation) happens inside each page/action where data is actually accessed.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
   // Redirect unauthenticated users away from /app routes
-  if (!user && request.nextUrl.pathname.startsWith("/app")) {
+  if (!session && request.nextUrl.pathname.startsWith("/app")) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
@@ -46,7 +48,7 @@ export async function updateSession(request: NextRequest) {
 
   // Redirect authenticated users away from auth pages
   if (
-    user &&
+    session &&
     (request.nextUrl.pathname === "/login" ||
       request.nextUrl.pathname === "/signup")
   ) {

@@ -60,6 +60,8 @@ export const importTargets = pgTable("import_targets", {
   lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
   lastError: text("last_error"),
   txCount: integer("tx_count").default(0),
+  autoImport: boolean("auto_import").default(false).notNull(),
+  autoImportInterval: text("auto_import_interval").default("24h"), // '1h' | '6h' | '12h' | '24h'
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

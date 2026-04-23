@@ -38,7 +38,33 @@ export async function addWallet(formData: FormData) {
 
   await db.insert(importTargets).values({ walletId: wallet.id, syncStatus: "idle" });
 
-  revalidatePath("/app/wallets");
+  revalidatePath("/app", "layout");
+}
+
+export async function updateAutoImport(walletId: string, autoImport: boolean, interval: string) {
+  const orgId = await getOrgId();
+
+  // Verify ownership
+  const [wallet] = await db.select({ id: wallets.id }).from(wallets)
+    .where(and(eq(wallets.id, walletId), eq(wallets.organizationId, orgId))).limit(1);
+  if (!wallet) return;
+
+  await db.update(importTargets)
+    .set({ autoImport, autoImportInterval: interval, updatedAt: new Date() })
+    .where(eq(importTargets.walletId, walletId));
+
+  revalidatePath("/app", "layout");
+}
+
+export async function updateWalletLabel(walletId: string, label: string) {
+  const orgId = await getOrgId();
+
+  await db
+    .update(wallets)
+    .set({ label: label.trim() || null })
+    .where(and(eq(wallets.id, walletId), eq(wallets.organizationId, orgId)));
+
+  revalidatePath("/app", "layout");
 }
 
 export async function deleteWallet(walletId: string) {
@@ -49,5 +75,5 @@ export async function deleteWallet(walletId: string) {
     .set({ isActive: false })
     .where(and(eq(wallets.id, walletId), eq(wallets.organizationId, orgId)));
 
-  revalidatePath("/app/wallets");
+  revalidatePath("/app", "layout");
 }

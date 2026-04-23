@@ -5,7 +5,7 @@
 import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { wallets, importTargets } from "@/db/schema/wallets";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { ensureCurrencies } from "@/lib/currencies";
 import { fetchTrc20Transactions, fetchTrxTransfers } from "./tron";
 import { fetchEvmNormalTxs, fetchErc20Transfers } from "./evm";
@@ -23,41 +23,14 @@ async function getInternalAddresses(orgId: string): Promise<Set<string>> {
 }
 
 async function getExistingHashes(orgId: string): Promise<Set<string>> {
+  // Only count non-deleted transactions — soft-deleted ones can be re-imported
   const rows = await db
     .select({ txHash: transactions.txHash })
     .from(transactions)
-    .where(eq(transactions.organizationId, orgId));
+    .where(and(eq(transactions.organizationId, orgId), isNull(transactions.deletedAt)));
   return new Set(rows.map((r) => r.txHash).filter(Boolean) as string[]);
 }
 
-async function insertTransaction(
-  orgId: string,
-  converted: ConvertedTx,
-  walletId: string
-): Promise<void> {
-  if (!converted) return;
-  const { tx, legs } = converted;
-
-  const [inserted] = await db
-    .insert(transactions)
-    .values({ ...tx, organizationId: orgId, isMatched: false })
-    .returning({ id: transactions.id });
-
-  if (legs.length > 0) {
-    await db.insert(transactionLegs).values(
-      legs.map((leg) => ({
-        transactionId: inserted.id,
-        direction: leg.direction,
-        amount: leg.amount,
-        currency: leg.currency,
-        walletId,
-      }))
-    );
-  }
-
-  const legCodes = legs.map((l) => l.currency).filter(Boolean);
-  if (legCodes.length > 0) await ensureCurrencies(orgId, legCodes);
-}
 
 export async function runImport(walletId: string, orgId: string): Promise<{ inserted: number; skipped: number }> {
   await db
@@ -114,15 +87,39 @@ export async function runImport(walletId: string, orgId: string): Promise<{ inse
       ];
     }
 
-    for (const converted of convertedTxs) {
-      if (!converted) { skipped++; continue; }
-      if (converted.tx.txHash && existingHashes.has(converted.tx.txHash)) {
-        skipped++;
-        continue;
+    // Filter to new transactions only (dedup against existing hashes)
+    const newTxs = convertedTxs.filter((c) => {
+      if (!c) { skipped++; return false; }
+      if (c.tx.txHash && existingHashes.has(c.tx.txHash)) { skipped++; return false; }
+      return true;
+    }) as NonNullable<ConvertedTx>[];
+
+    inserted = newTxs.length;
+
+    if (newTxs.length > 0) {
+      // Batch insert all transactions in one query
+      const insertedTxs = await db
+        .insert(transactions)
+        .values(newTxs.map((c) => ({ ...c.tx, organizationId: orgId, isMatched: false })))
+        .returning({ id: transactions.id });
+
+      // Batch insert all legs in one query
+      const allLegs = newTxs.flatMap((c, i) =>
+        c.legs.map((leg) => ({
+          transactionId: insertedTxs[i].id,
+          direction: leg.direction,
+          amount: leg.amount,
+          currency: leg.currency,
+          walletId,
+        }))
+      );
+      if (allLegs.length > 0) {
+        await db.insert(transactionLegs).values(allLegs);
       }
-      await insertTransaction(orgId, converted, walletId);
-      if (converted.tx.txHash) existingHashes.add(converted.tx.txHash);
-      inserted++;
+
+      // Ensure all currencies exist (one upsert for the whole batch)
+      const allCurrencies = newTxs.flatMap((c) => c.legs.map((l) => l.currency)).filter(Boolean);
+      if (allCurrencies.length > 0) await ensureCurrencies(orgId, allCurrencies);
     }
 
     const txCountRow = await db

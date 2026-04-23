@@ -4,8 +4,10 @@ import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 import { runFifo, type FifoTxRow } from "@/lib/fifo/engine";
+import RefreshButton from "@/components/refresh-button";
+
 
 export default async function FifoPage() {
   const supabase = await createClient();
@@ -13,7 +15,8 @@ export default async function FifoPage() {
   if (!user) redirect("/login");
 
   const [membership] = await db.select({ organizationId: organizationMembers.organizationId })
-    .from(organizationMembers).where(eq(organizationMembers.userId, user.id)).limit(1);
+    .from(organizationMembers)
+    .where(eq(organizationMembers.userId, user.id)).limit(1);
   if (!membership) redirect("/app/onboarding");
 
   const fiatRows = await db.select({ code: currencies.code }).from(currencies)
@@ -29,7 +32,7 @@ export default async function FifoPage() {
       transactionType: transactions.transactionType,
     })
     .from(transactions)
-    .where(and(eq(transactions.organizationId, membership.organizationId), eq(transactions.transactionType, "Exchange")))
+    .where(and(eq(transactions.organizationId, membership.organizationId), eq(transactions.transactionType, "Exchange"), isNull(transactions.deletedAt)))
     .orderBy(transactions.timestamp);
 
   const legs = txRows.length > 0
@@ -73,9 +76,12 @@ export default async function FifoPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-100">FIFO Cost Basis</h1>
-        <p className="text-sm text-slate-500">{result.summary.length} pair{result.summary.length !== 1 ? "s" : ""} tracked</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-slate-100">FIFO Cost Basis</h1>
+          <p className="text-sm text-slate-500">{result.summary.length} pair{result.summary.length !== 1 ? "s" : ""} tracked</p>
+        </div>
+        <RefreshButton />
       </div>
 
       {/* Summary cards */}
@@ -151,6 +157,63 @@ export default async function FifoPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Disposals breakdown */}
+          {Object.values(result.pairs).some((p) => p.disposals.length > 0) && (
+            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
+              <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
+                <h2 className="text-sm font-medium text-slate-300">Disposal breakdown</h2>
+                <p className="text-xs text-slate-600 mt-0.5">How each realized gain was calculated: gain = (sell rate − cost rate) × amount</p>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Date</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Amount</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Cost rate</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Sell rate</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Lot acquired</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Gain</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.values(result.pairs).flatMap((p) =>
+                    p.disposals.map((d, i) => {
+                      const isLast = i === p.disposals.length - 1 && p === Object.values(result.pairs).at(-1);
+                      return (
+                        <tr key={`${p.pair}-d-${i}`} style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
+                          <td className="px-4 py-2 text-xs font-mono text-slate-500">
+                            {d.disposedAt.toISOString().slice(0, 10)}
+                          </td>
+                          <td className="px-4 py-2 text-xs font-mono text-slate-400">{p.pair}</td>
+                          <td className="px-4 py-2 text-xs font-mono text-right text-slate-300">
+                            {d.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {p.cryptoCurrency}
+                          </td>
+                          <td className="px-4 py-2 text-xs font-mono text-right text-slate-500">
+                            {d.costRate === 0
+                              ? <span className="text-slate-700">0 (no lot)</span>
+                              : <>{d.costRate.toLocaleString(undefined, { maximumFractionDigits: 6 })} {p.fiatCurrency}</>}
+                          </td>
+                          <td className="px-4 py-2 text-xs font-mono text-right text-slate-400">
+                            {d.proceedsRate.toLocaleString(undefined, { maximumFractionDigits: 6 })} {p.fiatCurrency}
+                          </td>
+                          <td className="px-4 py-2 text-xs text-right text-slate-600">
+                            {d.lotAcquiredAt ? d.lotAcquiredAt.toISOString().slice(0, 10) : <span className="text-slate-700">—</span>}
+                          </td>
+                          <td className="px-4 py-2 text-xs font-mono text-right font-medium">
+                            <span style={{ color: d.gain >= 0 ? "var(--accent)" : "var(--red)" }}>
+                              {d.gain >= 0 ? "+" : ""}{d.gain.toLocaleString(undefined, { maximumFractionDigits: 4 })} {p.fiatCurrency}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Open lots detail */}
           {Object.values(result.pairs).some((p) => p.lots.length > 0) && (
