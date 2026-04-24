@@ -106,6 +106,17 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Help",
+    href: "/app/help",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="6.3" stroke="currentColor" strokeWidth="1.4"/>
+        <path d="M6 6c0-1.1.9-2 2-2s2 .9 2 2c0 .8-.5 1.3-1.1 1.6-.5.3-.9.7-.9 1.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        <circle cx="8" cy="11.3" r="0.6" fill="currentColor"/>
+      </svg>
+    ),
+  },
+  {
     label: "Settings",
     href: "/app/settings",
     icon: (
