@@ -962,8 +962,18 @@ export default function TransactionTable({
                       style={{ accentColor: "var(--accent)", cursor: "pointer", width: "13px", height: "13px" }}
                     />
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
-                    {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="text-xs text-slate-400">
+                      {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
+                    </div>
+                    <button
+                      type="button"
+                      title={tx.id}
+                      onClick={() => navigator.clipboard.writeText(tx.id)}
+                      className="text-[10px] font-mono text-slate-700 hover:text-slate-500 transition-colors mt-0.5 block"
+                    >
+                      {tx.id.slice(0, 8)}
+                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <TypePicker txId={tx.id} current={tx.transactionType} txTypes={txTypes} />
