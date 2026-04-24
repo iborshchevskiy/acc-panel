@@ -176,24 +176,26 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
         shortQueues.get(pair)!.push([toDispose, proceedsRate, row.timestamp, row.id]);
       }
     } else if (incFiat && outFiat) {
-      // Fiat/fiat swap (e.g. USD → CZK, or EUR → CZK).
-      // The outgoing fiat may have been purchased with USDT and have open lots.
-      // Close those lots and carry the USDT cost basis forward to the incoming fiat
-      // so gain is recognised when the incoming fiat is eventually sold for USDT.
-      // No gain is recorded at the swap itself — only a basis transfer.
+      // Fiat/fiat swap (e.g. USD → CZK, or RUB → CZK).
+      // If the outgoing fiat has open lots (bought earlier with USDT), close them
+      // and carry the USDT cost basis forward to the incoming fiat.
+      // If there are NO lots (or lots are exhausted), record a short position so
+      // that when the outgoing fiat is later acquired it closes cleanly —
+      // preventing ghost open lots.
 
-      // Find if the outgoing fiat has lots from a known base currency.
+      let toDispose = outAmt;
+      let basisCarried = 0;
+      let fiatConsumed = 0;
+      let baseCur = "USDT"; // default base; overridden by actual lot's base if found
+
       const outPairKey = [...queues.keys()].find(
         (k) => k.startsWith(`${outCur}/`) && (queues.get(k)?.some((q) => q[R] > 1e-9))
       );
-      if (outPairKey) {
-        const baseCur = outPairKey.split("/")[1]; // e.g. USDT
-        const inPair  = `${incCur}/${baseCur}`;  // e.g. CZK/USDT
-        const outQueue = queues.get(outPairKey)!;
 
-        let toDispose = outAmt;
-        let basisCarried = 0; // USDT basis consumed from outgoing lots
-        let fiatConsumed = 0;
+      if (outPairKey) {
+        baseCur = outPairKey.split("/")[1];
+        const inPair  = `${incCur}/${baseCur}`;
+        const outQueue = queues.get(outPairKey)!;
 
         while (toDispose > 1e-9 && outQueue.length > 0) {
           const lot = outQueue[0];
@@ -206,10 +208,9 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
         }
 
         if (fiatConsumed > 1e-9 && basisCarried > 1e-9) {
-          // Proportional share of incoming fiat that has a backing cost basis.
           const proportion = fiatConsumed / outAmt;
           const inAmt = incAmt * proportion;
-          const inheritedRate = basisCarried / inAmt; // base per incoming fiat unit
+          const inheritedRate = basisCarried / inAmt;
 
           if (!queues.has(inPair)) queues.set(inPair, []);
           if (!realized.has(inPair)) realized.set(inPair, []);
@@ -220,6 +221,20 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
 
         disposed.set(outPairKey, (disposed.get(outPairKey) ?? 0) + fiatConsumed);
         tradeCounts.set(outPairKey, (tradeCounts.get(outPairKey) ?? 0) + 1);
+      }
+
+      // Any outgoing fiat with no lot backing (full short or partial remainder):
+      // record as short so future acquisitions of this fiat close it cleanly.
+      // proceedsRate = 0 because we don't know the USDT rate for this swap leg;
+      // the resulting gain when covered will reflect only the acquisition cost.
+      if (toDispose > 1e-9) {
+        const shortPair = `${outCur}/${baseCur}`;
+        if (!shortQueues.has(shortPair)) shortQueues.set(shortPair, []);
+        if (!queues.has(shortPair)) queues.set(shortPair, []);
+        if (!realized.has(shortPair)) realized.set(shortPair, []);
+        shortQueues.get(shortPair)!.push([toDispose, 0, row.timestamp, row.id]);
+        disposed.set(shortPair, (disposed.get(shortPair) ?? 0) + toDispose);
+        tradeCounts.set(shortPair, (tradeCounts.get(shortPair) ?? 0) + 1);
       }
     }
   }
