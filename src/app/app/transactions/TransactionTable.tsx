@@ -915,6 +915,35 @@ function InlineEditForm({ tx, legRows, txTypes, currencyCodes, onClose }: {
   );
 }
 
+// ── Exchange rate helpers ─────────────────────────────────────────────────────
+
+function fmtExRate(outAmt: number, outCur: string, inAmt: number, inCur: string): string | null {
+  if (!outAmt || !inAmt || inCur === outCur || !inCur || !outCur) return null;
+  const rate = outAmt / inAmt; // outCur per inCur
+  if (rate >= 1) {
+    return `${rate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${outCur}/${inCur}`;
+  }
+  return `${(1 / rate).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${inCur}/${outCur}`;
+}
+
+/** Returns one rate string per paired leg. Handles 1:1 and N:N; returns [] otherwise. */
+function calcRates(inLegs: LegRow[], outLegs: LegRow[]): string[] {
+  const ins  = inLegs.filter(l  => l.amount && parseFloat(l.amount)  > 0 && l.currency);
+  const outs = outLegs.filter(l => l.amount && parseFloat(l.amount) > 0 && l.currency);
+  if (ins.length === 0 || outs.length === 0) return [];
+  if (ins.length === 1 && outs.length === 1) {
+    const r = fmtExRate(parseFloat(outs[0].amount!), outs[0].currency!, parseFloat(ins[0].amount!), ins[0].currency!);
+    return r ? [r] : [];
+  }
+  if (ins.length === outs.length) {
+    return ins.flatMap((il, i) => {
+      const r = fmtExRate(parseFloat(outs[i].amount!), outs[i].currency!, parseFloat(il.amount!), il.currency!);
+      return r ? [r] : [];
+    });
+  }
+  return [];
+}
+
 // ── Main table ────────────────────────────────────────────────────────────────
 
 export default function TransactionTable({
@@ -1001,6 +1030,7 @@ export default function TransactionTable({
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Status</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">In</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Out</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Rate</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">TxID</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Client</th>
               <th className="px-4 py-3 w-16" />
@@ -1057,6 +1087,19 @@ export default function TransactionTable({
                   <td className="px-4 pt-3 pb-3">
                     <LegStack legs={outLegs} direction="out" txId={tx.id} currencyCodes={currencyCodes} />
                   </td>
+                  <td className="px-4 pt-3 pb-3">
+                    {(() => {
+                      const rates = calcRates(inLegs, outLegs);
+                      if (rates.length === 0) return <span className="text-xs font-mono" style={{ color: "var(--text-4)" }}>—</span>;
+                      return (
+                        <div className="flex flex-col gap-1">
+                          {rates.map((r, i) => (
+                            <span key={i} className="text-xs font-mono whitespace-nowrap" style={{ color: "var(--text-3)" }}>{r}</span>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td className="px-4 pt-3 pb-3 text-xs font-mono text-slate-600">
                     {explorerUrl && tx.txHash ? (
                       <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
@@ -1086,7 +1129,7 @@ export default function TransactionTable({
                 </tr>
                 {isEditing && (
                   <tr>
-                    <td colSpan={9} style={{
+                    <td colSpan={10} style={{
                       padding: 0,
                       borderBottom: isLast ? "none" : "1px solid var(--inner-border)",
                     }}>
