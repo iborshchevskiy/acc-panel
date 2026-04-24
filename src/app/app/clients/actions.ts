@@ -69,7 +69,7 @@ export async function uploadClientDocument(
   const orgId = await getOrgId();
   const file = formData.get("file") as File | null;
   if (!file || file.size === 0) return { error: "No file provided" };
-  if (file.size > 20 * 1024 * 1024) return { error: "File too large (max 20 MB)" };
+  if (file.size > 10 * 1024 * 1024) return { error: "File too large (max 10 MB)" };
 
   const ext = file.name.split(".").pop() ?? "bin";
   const storageKey = `${orgId}/${clientId}/${docType}/${crypto.randomUUID()}.${ext}`;
