@@ -69,11 +69,44 @@ async function main() {
   await sql`CREATE INDEX IF NOT EXISTS cash_ops_investor_id_idx ON cash_operations(investor_id)`;
   console.log("  ✓ cash_ops_investor_id index");
 
-  // 5. verification probe — the exact query that was 500-ing
-  const probe = await sql`
-    SELECT COUNT(*)::int AS n FROM cash_operations WHERE organization_id IS NOT NULL LIMIT 1
+  // 5. Backfill — create an investor record for every distinct
+  //    (organization_id, investor-name) pair that exists in cash_operations
+  //    but has no investor_id yet. Idempotent via ON CONFLICT on the
+  //    unique (organization_id, name) index.
+  const createdRows = await sql`
+    INSERT INTO investors (organization_id, name)
+    SELECT DISTINCT organization_id, TRIM(investor)
+    FROM cash_operations
+    WHERE investor_id IS NULL
+      AND investor IS NOT NULL
+      AND TRIM(investor) <> ''
+    ON CONFLICT (organization_id, name) DO NOTHING
+    RETURNING id
   `;
-  console.log(`\nprobe (cash_operations row count query): ${probe[0].n} rows reachable`);
+  console.log(`  ✓ backfill: created ${createdRows.length} investor records from existing rows`);
+
+  // 6. Link every unlinked cash_operations row to its matching investor.
+  //    Safe to re-run: the investor_id IS NULL guard stops it touching
+  //    already-linked rows.
+  const linkedRows = await sql`
+    UPDATE cash_operations AS co
+    SET investor_id = i.id
+    FROM investors AS i
+    WHERE co.investor_id IS NULL
+      AND co.organization_id = i.organization_id
+      AND TRIM(co.investor) = i.name
+    RETURNING co.id
+  `;
+  console.log(`  ✓ backfill: linked ${linkedRows.length} existing cash_operations rows`);
+
+  // 7. verification probe — the exact query that was 500-ing + investor counts
+  const probe = await sql`
+    SELECT COUNT(*)::int AS n FROM cash_operations WHERE organization_id IS NOT NULL
+  `;
+  const [investorCount] = await sql<{ n: number }[]>`
+    SELECT COUNT(*)::int AS n FROM investors
+  `;
+  console.log(`\nprobe: ${probe[0].n} cash_operations rows · ${investorCount.n} investors`);
   console.log("DONE.");
 }
 
