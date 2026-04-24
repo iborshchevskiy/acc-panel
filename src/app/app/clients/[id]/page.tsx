@@ -1,12 +1,13 @@
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
-import { clients, clientWallets, transactionClients } from "@/db/schema/clients";
+import { clients, clientWallets, clientDocuments, transactionClients } from "@/db/schema/clients";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { organizationMembers } from "@/db/schema/system";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { wallets } from "@/db/schema/wallets";
 import { updateClient, deleteClient, addClientWallet, removeClientWallet } from "../actions";
+import KycSection from "./KycSection";
 
 interface PageProps { params: Promise<{ id: string }> }
 
@@ -25,6 +26,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
   if (!client) notFound();
 
   const walletRows = await db.select().from(clientWallets).where(eq(clientWallets.clientId, id));
+  const docRows = await db.select().from(clientDocuments).where(eq(clientDocuments.clientId, id));
 
   // Transactions assigned to this client
   const txRows = await db
@@ -134,6 +136,28 @@ export default async function ClientDetailPage({ params }: PageProps) {
             style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}>Save</button>
         </div>
       </form>
+
+      {/* KYC section */}
+      <KycSection
+        clientId={id}
+        initial={{
+          dateOfBirth:   client.dateOfBirth   ?? null,
+          sex:           client.sex           ?? null,
+          address:       client.address       ?? null,
+          phone:         client.phone         ?? null,
+          email:         client.email         ?? null,
+          sourceOfFunds: client.sourceOfFunds ?? null,
+          sourceOfWealth: client.sourceOfWealth ?? null,
+        }}
+        documents={docRows.map((d) => ({
+          id: d.id,
+          docType: d.docType,
+          fileName: d.fileName,
+          fileSize: d.fileSize,
+          mimeType: d.mimeType,
+          uploadedAt: d.uploadedAt.toISOString(),
+        }))}
+      />
 
       {/* Counterparty wallets — manual + auto-derived from transactions */}
       <div className="flex flex-col gap-3">

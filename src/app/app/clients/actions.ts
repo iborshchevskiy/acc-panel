@@ -3,11 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
-import { clients, clientWallets, transactionClients } from "@/db/schema/clients";
+import { clients, clientWallets, clientDocuments, transactionClients } from "@/db/schema/clients";
 import { transactions } from "@/db/schema/transactions";
 import { organizationMembers } from "@/db/schema/system";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { eq, and } from "drizzle-orm";
+
+const DOCS_BUCKET = "client-docs";
 
 async function getOrgId(): Promise<string> {
   const supabase = await createClient();
@@ -40,6 +43,82 @@ export async function updateClient(clientId: string, formData: FormData) {
     .where(and(eq(clients.id, clientId), eq(clients.organizationId, orgId)));
   revalidatePath(`/app/clients/${clientId}`);
   revalidatePath("/app/clients");
+}
+
+export async function updateClientKyc(clientId: string, formData: FormData) {
+  const orgId = await getOrgId();
+  const str = (k: string) => (formData.get(k) as string | null)?.trim() || null;
+  await db.update(clients).set({
+    dateOfBirth:   str("date_of_birth"),
+    sex:           str("sex"),
+    address:       str("address"),
+    phone:         str("phone"),
+    email:         str("email"),
+    sourceOfFunds: str("source_of_funds"),
+    sourceOfWealth: str("source_of_wealth"),
+    updatedAt: new Date(),
+  }).where(and(eq(clients.id, clientId), eq(clients.organizationId, orgId)));
+  revalidatePath(`/app/clients/${clientId}`);
+}
+
+export async function uploadClientDocument(
+  clientId: string,
+  docType: string,
+  formData: FormData
+): Promise<{ error?: string }> {
+  const orgId = await getOrgId();
+  const file = formData.get("file") as File | null;
+  if (!file || file.size === 0) return { error: "No file provided" };
+  if (file.size > 20 * 1024 * 1024) return { error: "File too large (max 20 MB)" };
+
+  const ext = file.name.split(".").pop() ?? "bin";
+  const storageKey = `${orgId}/${clientId}/${docType}/${crypto.randomUUID()}.${ext}`;
+
+  const admin = createAdminClient();
+  // Ensure bucket exists (no-op if it already does)
+  await admin.storage.createBucket(DOCS_BUCKET, { public: false }).catch(() => {});
+
+  const bytes = await file.arrayBuffer();
+  const { error } = await admin.storage.from(DOCS_BUCKET).upload(storageKey, bytes, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
+  });
+  if (error) return { error: error.message };
+
+  await db.insert(clientDocuments).values({
+    clientId,
+    organizationId: orgId,
+    docType,
+    fileName: file.name,
+    fileSize: file.size,
+    mimeType: file.type || null,
+    storageKey,
+  });
+  revalidatePath(`/app/clients/${clientId}`);
+  return {};
+}
+
+export async function deleteClientDocument(docId: string, clientId: string) {
+  const orgId = await getOrgId();
+  const [doc] = await db.select().from(clientDocuments)
+    .where(and(eq(clientDocuments.id, docId), eq(clientDocuments.organizationId, orgId)));
+  if (!doc) return;
+
+  const admin = createAdminClient();
+  await admin.storage.from(DOCS_BUCKET).remove([doc.storageKey]);
+  await db.delete(clientDocuments).where(eq(clientDocuments.id, docId));
+  revalidatePath(`/app/clients/${clientId}`);
+}
+
+export async function getDocumentSignedUrl(docId: string): Promise<string | null> {
+  const orgId = await getOrgId();
+  const [doc] = await db.select().from(clientDocuments)
+    .where(and(eq(clientDocuments.id, docId), eq(clientDocuments.organizationId, orgId)));
+  if (!doc) return null;
+
+  const admin = createAdminClient();
+  const { data } = await admin.storage.from(DOCS_BUCKET).createSignedUrl(doc.storageKey, 3600);
+  return data?.signedUrl ?? null;
 }
 
 export async function deleteClient(clientId: string) {
