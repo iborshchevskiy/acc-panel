@@ -526,14 +526,15 @@ function CurrencyCombobox({ nameAttr, value, codes, onChange }: {
   );
 }
 
-// ── Inline leg editor (In / Out cells) ───────────────────────────────────────
+// ── Inline leg editor (single leg) ───────────────────────────────────────────
 
-function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes }: {
+function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes, onSaved }: {
   leg: LegRow | undefined;
   txId: string;
   direction: "in" | "out";
   readonly: boolean;
   currencyCodes: string[];
+  onSaved?: () => void;
 }) {
   const [editing, setEditing]   = useState(false);
   const [amount, setAmount]     = useState(leg?.amount ?? "");
@@ -544,7 +545,6 @@ function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes }: {
 
   useEffect(() => { if (editing) amountRef.current?.focus(); }, [editing]);
 
-  // Sync display state from props after server revalidation (when not actively editing)
   useEffect(() => {
     if (!editing) {
       setAmount(leg?.amount ?? "");
@@ -563,6 +563,7 @@ function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes }: {
     }
     setSaving(false);
     setEditing(false);
+    onSaved?.();
   }
 
   function cancel() {
@@ -570,15 +571,16 @@ function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes }: {
     setCurrency(leg?.currency ?? "");
     setLocation(leg?.location ?? "");
     setEditing(false);
+    onSaved?.();
   }
 
   const color = direction === "in" ? "var(--accent)" : "var(--red)";
-  const sign  = direction === "in" ? "+" : "-";
+  const sign  = direction === "in" ? "+" : "−";
   const codes = currency && !currencyCodes.includes(currency) ? [currency, ...currencyCodes] : currencyCodes;
 
   if (editing) {
     return (
-      <div className="flex flex-col gap-1.5 py-0.5 min-w-[140px]">
+      <div className="flex flex-col gap-1.5 py-0.5">
         <div className="flex items-center gap-1.5">
           <input
             ref={amountRef}
@@ -616,16 +618,15 @@ function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes }: {
   }
 
   const hasValue = !!amount;
-  const display = hasValue
-    ? <>{sign}{Number(amount).toLocaleString()} {currency}</>
-    : <>—</>;
 
   if (readonly) {
     return (
       <div>
-        <span className="text-xs font-mono" style={{ color: hasValue ? color : "var(--text-3)" }}>{display}</span>
+        <span className="text-xs font-mono" style={{ color: hasValue ? color : "var(--text-3)" }}>
+          {hasValue ? <>{sign}{Number(amount).toLocaleString()} <span style={{ opacity: 0.7 }}>{currency}</span></> : "—"}
+        </span>
         {location && (
-          <div className="text-xs font-mono mt-0.5" style={{ color: "var(--text-3)" }}>
+          <div className="text-[10px] font-mono mt-0.5" style={{ color: "var(--text-4)" }}>
             {location.length > 14 ? `${location.slice(0, 6)}…${location.slice(-4)}` : location}
           </div>
         )}
@@ -638,26 +639,97 @@ function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes }: {
       type="button"
       onClick={() => setEditing(true)}
       className="group w-full text-left rounded px-1 py-0.5 -mx-1 transition-colors hover:bg-white/5"
-      style={{ cursor: "pointer" }}
       title={leg ? "Click to edit" : "Click to add"}
     >
       <div className="flex items-center gap-1">
         <span className="text-xs font-mono" style={{ color: hasValue ? color : "var(--text-3)" }}>
-          {display}
+          {hasValue
+            ? <>{sign}{Number(amount).toLocaleString()} <span style={{ opacity: 0.65 }}>{currency}</span></>
+            : "—"}
         </span>
-        <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
-          className="shrink-0 opacity-0 group-hover:opacity-50 transition-opacity"
-          style={{ color: "var(--accent)" }}>
-          <path d="M8.5 1.5a1.5 1.5 0 0 1 2 2L4 10l-3 1 1-3 6.5-6.5z"
-            stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-        </svg>
+        {!hasValue && (
+          <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
+            className="shrink-0 opacity-0 group-hover:opacity-50 transition-opacity"
+            style={{ color: "var(--accent)" }}>
+            <path d="M8.5 1.5a1.5 1.5 0 0 1 2 2L4 10l-3 1 1-3 6.5-6.5z"
+              stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+          </svg>
+        )}
       </div>
       {location && (
-        <div className="text-xs font-mono mt-0.5" style={{ color: "var(--text-3)" }}>
-          {location.length > 14 ? `${location.slice(0, 6)}…${location.slice(-4)}` : location}
+        <div className="text-[10px] font-mono mt-0.5 truncate max-w-[140px]" style={{ color: "var(--text-4)" }}>
+          {location.length > 16 ? `${location.slice(0, 7)}…${location.slice(-5)}` : location}
         </div>
       )}
     </button>
+  );
+}
+
+// ── Leg stack — shows ALL legs for one direction ──────────────────────────────
+
+function LegStack({ legs, direction, txId, currencyCodes }: {
+  legs: LegRow[];
+  direction: "in" | "out";
+  txId: string;
+  currencyCodes: string[];
+}) {
+  const [addingNew, setAddingNew] = useState(false);
+  const color = direction === "in" ? "var(--accent)" : "var(--red)";
+  const isMulti = legs.length > 1 || (legs.length === 1 && addingNew);
+
+  if (legs.length === 0 && !addingNew) {
+    return (
+      <InlineLegEditor
+        leg={undefined} txId={txId} direction={direction}
+        readonly={false} currencyCodes={currencyCodes}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="flex flex-col"
+      style={isMulti ? {
+        paddingLeft: "7px",
+        borderLeft: `1.5px solid ${color}`,
+        gap: 0,
+        opacity: 1,
+      } : undefined}
+    >
+      {legs.map((leg, i) => (
+        <Fragment key={leg.id}>
+          {i > 0 && (
+            <div style={{ height: 1, margin: "3px 0", backgroundColor: "var(--inner-border)", opacity: 0.5 }} />
+          )}
+          <InlineLegEditor
+            leg={leg} txId={txId} direction={direction}
+            readonly={false} currencyCodes={currencyCodes}
+          />
+        </Fragment>
+      ))}
+
+      {addingNew && (
+        <>
+          <div style={{ height: 1, margin: "3px 0", backgroundColor: "var(--inner-border)", opacity: 0.5 }} />
+          <InlineLegEditor
+            leg={undefined} txId={txId} direction={direction}
+            readonly={false} currencyCodes={currencyCodes}
+            onSaved={() => setAddingNew(false)}
+          />
+        </>
+      )}
+
+      {!addingNew && (
+        <button
+          type="button"
+          onClick={() => setAddingNew(true)}
+          className="mt-1 text-left text-[9px] transition-opacity hover:opacity-80"
+          style={{ color: "var(--text-4)", opacity: 0.4 }}
+        >
+          + leg
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -937,14 +1009,11 @@ export default function TransactionTable({
           <tbody>
             {rows.map((tx, i) => {
               const txLegs = legsByTx.get(tx.id) ?? [];
-              const inLeg = txLegs.find((l) => l.direction === "in");
-              const outLeg = txLegs.find((l) => l.direction === "out");
+              const inLegs  = txLegs.filter((l) => l.direction === "in");
+              const outLegs = txLegs.filter((l) => l.direction === "out");
               const isLast = i === rows.length - 1;
               const isEditing = editingId === tx.id;
               const isChecked = selected.has(tx.id);
-              const typeColor = tx.transactionType
-                ? (TX_TYPE_COLORS[tx.transactionType] ?? "var(--text-2)")
-                : "var(--text-2)";
               const explorerUrl = tx.txHash ? `https://tronscan.org/#/transaction/${tx.txHash}` : null;
 
               return (
@@ -956,13 +1025,14 @@ export default function TransactionTable({
                   borderBottom: isEditing ? "none" : isLast ? "none" : "1px solid var(--inner-border)",
                   opacity: isPending && isChecked ? 0.5 : 1,
                   transition: "background-color 0.1s, opacity 0.15s",
+                  verticalAlign: "top",
                 }}>
-                  <td className="px-3 py-3">
+                  <td className="px-3 pt-3">
                     <input type="checkbox" checked={isChecked} onChange={() => toggleRow(tx.id)}
                       style={{ accentColor: "var(--accent)", cursor: "pointer", width: "13px", height: "13px" }}
                     />
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 pt-3 pb-3 whitespace-nowrap">
                     <div className="text-xs text-slate-400">
                       {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
                     </div>
@@ -975,19 +1045,19 @@ export default function TransactionTable({
                       {tx.id.slice(0, 8)}
                     </button>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 pt-3 pb-3">
                     <TypePicker txId={tx.id} current={tx.transactionType} txTypes={txTypes} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 pt-3 pb-3">
                     <StatusPicker txId={tx.id} current={tx.status} />
                   </td>
-                  <td className="px-4 py-3">
-                    <InlineLegEditor key={inLeg?.id ?? `${tx.id}-in`} leg={inLeg} txId={tx.id} direction="in" readonly={false} currencyCodes={currencyCodes} />
+                  <td className="px-4 pt-3 pb-3">
+                    <LegStack legs={inLegs} direction="in" txId={tx.id} currencyCodes={currencyCodes} />
                   </td>
-                  <td className="px-4 py-3">
-                    <InlineLegEditor key={outLeg?.id ?? `${tx.id}-out`} leg={outLeg} txId={tx.id} direction="out" readonly={false} currencyCodes={currencyCodes} />
+                  <td className="px-4 pt-3 pb-3">
+                    <LegStack legs={outLegs} direction="out" txId={tx.id} currencyCodes={currencyCodes} />
                   </td>
-                  <td className="px-4 py-3 text-xs font-mono text-slate-600">
+                  <td className="px-4 pt-3 pb-3 text-xs font-mono text-slate-600">
                     {explorerUrl && tx.txHash ? (
                       <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
                         className="hover:text-emerald-400 transition-colors" title={tx.txHash}>
@@ -995,10 +1065,10 @@ export default function TransactionTable({
                       </a>
                     ) : <span className="text-slate-700">manual</span>}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 pt-3 pb-3">
                     <ClientPicker txId={tx.id} current={clientByTx[tx.id] ?? null} clients={orgClients} />
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 pt-3 pb-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button type="button"
                         onClick={() => setEditingId(isEditing ? null : tx.id)}
