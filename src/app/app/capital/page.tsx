@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
-import { cashOperations } from "@/db/schema/capital";
+import { cashOperations, investors } from "@/db/schema/capital";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, asc } from "drizzle-orm";
 import { addCashOperation, deleteCashOperation } from "./actions";
+import InvestorPicker from "./InvestorPicker";
 
 export default async function CapitalPage() {
   const supabase = await createClient();
@@ -15,11 +16,18 @@ export default async function CapitalPage() {
     .from(organizationMembers).where(eq(organizationMembers.userId, user.id)).limit(1);
   if (!membership) redirect("/app/onboarding");
 
-  const rows = await db.select().from(cashOperations)
-    .where(eq(cashOperations.organizationId, membership.organizationId))
-    .orderBy(desc(cashOperations.date));
+  const [rows, investorRows] = await Promise.all([
+    db.select().from(cashOperations)
+      .where(eq(cashOperations.organizationId, membership.organizationId))
+      .orderBy(desc(cashOperations.date)),
+    db.select({ id: investors.id, name: investors.name, note: investors.note })
+      .from(investors)
+      .where(eq(investors.organizationId, membership.organizationId))
+      .orderBy(asc(investors.name)),
+  ]);
 
-  // Summary per investor per currency
+  // Summary per investor per currency — derived from cash_operations so
+  // historical rows (pre-investors-table) still aggregate correctly.
   const summary = new Map<string, Map<string, number>>();
   for (const r of rows) {
     if (!summary.has(r.investor)) summary.set(r.investor, new Map());
@@ -28,7 +36,12 @@ export default async function CapitalPage() {
     inv.set(r.currency, (inv.get(r.currency) ?? 0) + (r.type === "deposit" ? amt : -amt));
   }
 
-  const investors = [...summary.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  // Merge in known investors with zero balance so they still show a card.
+  for (const inv of investorRows) {
+    if (!summary.has(inv.name)) summary.set(inv.name, new Map());
+  }
+
+  const investorSummary = [...summary.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -40,9 +53,9 @@ export default async function CapitalPage() {
       </div>
 
       {/* Summary cards */}
-      {investors.length > 0 && (
+      {investorSummary.length > 0 && (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {investors.map(([investor, balances]) => (
+          {investorSummary.map(([investor, balances]) => (
             <div key={investor} className="rounded-xl p-4" style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
               <p className="text-xs text-slate-500 truncate">{investor}</p>
               {[...balances.entries()].map(([cur, net]) => (
@@ -52,7 +65,7 @@ export default async function CapitalPage() {
                   <span className="ml-1 text-xs font-normal text-slate-500">{cur}</span>
                 </p>
               ))}
-              {balances.size === 0 && <p className="mt-1 text-sm text-slate-700">—</p>}
+              {balances.size === 0 && <p className="mt-1 text-sm text-slate-700">no activity yet</p>}
             </div>
           ))}
         </div>
@@ -63,8 +76,7 @@ export default async function CapitalPage() {
         style={{ backgroundColor: "#161b27", border: "1px solid #1e2432" }}>
         <input type="date" name="date" defaultValue={today} required
           className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500" style={{ colorScheme: "dark" }} />
-        <input name="investor" required placeholder="Investor name"
-          className="h-9 w-40 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
+        <InvestorPicker initial={investorRows} />
         <input name="amount" type="number" step="any" required placeholder="Amount"
           className="h-9 w-32 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
         <input name="currency" defaultValue="USDT" placeholder="Currency"
