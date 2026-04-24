@@ -112,22 +112,27 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
 
       // Close outstanding short positions first.
       // Gain = (sell rate − buy rate) × fiat amount, in base currency.
+      // Shorts with proceedsRate=0 were created from fiat/fiat swaps with no
+      // USDT leg — closing them produces no meaningful USDT gain, so skip
+      // recording a disposal (just drain the short quantity).
       if (shortQueues.has(pair)) {
         const shorts = shortQueues.get(pair)!;
         while (toAcquire > 1e-9 && shorts.length > 0) {
           const short = shorts[0];
           const consumed = Math.min(short[0], toAcquire);
-          realized.get(pair)!.push({
-            txId: short[3],
-            lotTxId: row.id,
-            disposedAt: short[2],
-            amount: consumed,
-            proceedsRate: short[1],
-            costRate,
-            gain: (short[1] - costRate) * consumed,
-            gainCurrency: outCur,               // base currency (USDT)
-            lotAcquiredAt: row.timestamp,
-          });
+          if (short[1] > 1e-9) {
+            realized.get(pair)!.push({
+              txId: short[3],
+              lotTxId: row.id,
+              disposedAt: short[2],
+              amount: consumed,
+              proceedsRate: short[1],
+              costRate,
+              gain: (short[1] - costRate) * consumed,
+              gainCurrency: outCur,
+              lotAcquiredAt: row.timestamp,
+            });
+          }
           short[0] -= consumed;
           toAcquire -= consumed;
           if (short[0] <= 1e-9) shorts.shift();
@@ -217,23 +222,27 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
           // Before opening new lots for the incoming fiat, close any existing
           // shorts for it (e.g. the exchange previously gave this fiat before
           // sourcing it and recorded a short).
+          // Shorts with proceedsRate=0 (fiat/fiat origin, no USDT leg) are
+          // drained silently — no disposal recorded.
           let toAcquire = incAmt * proportion;
           if (shortQueues.has(inPair)) {
             const shorts = shortQueues.get(inPair)!;
             while (toAcquire > 1e-9 && shorts.length > 0) {
               const short = shorts[0];
               const consumed = Math.min(short[0], toAcquire);
-              realized.get(inPair)!.push({
-                txId: short[3],
-                lotTxId: row.id,
-                disposedAt: short[2],
-                amount: consumed,
-                proceedsRate: short[1],  // 0 for shorts from fiat/fiat swaps without basis
-                costRate: inheritedRate,
-                gain: (short[1] - inheritedRate) * consumed,
-                gainCurrency: baseCur,
-                lotAcquiredAt: row.timestamp,
-              });
+              if (short[1] > 1e-9) {
+                realized.get(inPair)!.push({
+                  txId: short[3],
+                  lotTxId: row.id,
+                  disposedAt: short[2],
+                  amount: consumed,
+                  proceedsRate: short[1],
+                  costRate: inheritedRate,
+                  gain: (short[1] - inheritedRate) * consumed,
+                  gainCurrency: baseCur,
+                  lotAcquiredAt: row.timestamp,
+                });
+              }
               short[0] -= consumed;
               toAcquire -= consumed;
               if (short[0] <= 1e-9) shorts.shift();
