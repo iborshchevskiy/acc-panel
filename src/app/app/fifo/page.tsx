@@ -7,6 +7,7 @@ import { organizationMembers } from "@/db/schema/system";
 import { eq, and, inArray, isNull } from "drizzle-orm";
 import { runFifo, legsToFifoRows } from "@/lib/fifo/engine";
 import RefreshButton from "@/components/refresh-button";
+import DisposalBreakdown, { type DisposalEntry } from "./DisposalBreakdown";
 
 /** Display a rate in human-readable form: always show the value ≥ 1 side.
  *  e.g. 1.05 USDT/EUR stays as-is, but 0.043 USDT/CZK flips to 23.3 CZK/USDT. */
@@ -169,56 +170,23 @@ export default async function FifoPage() {
 
           {/* Disposals breakdown */}
           {Object.values(result.pairs).some((p) => p.disposals.length > 0) && (
-            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
-              <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
-                <h2 className="text-sm font-medium text-slate-300">Disposal breakdown</h2>
-                <p className="text-xs text-slate-600 mt-0.5">gain = (sell rate − buy rate) × fiat amount, in base currency</p>
-              </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Date</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Fiat amount</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Buy rate</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Sell rate</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Lot acquired</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Gain</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.values(result.pairs).flatMap((p) =>
-                    p.disposals.map((d, i) => (
-                        <tr key={`${p.pair}-d-${i}`} style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
-                          <td className="px-4 py-2 text-xs font-mono text-slate-500">
-                            {d.disposedAt.toISOString().slice(0, 10)}
-                          </td>
-                          <td className="px-4 py-2 text-xs font-mono text-slate-400">{p.pair}</td>
-                          <td className="px-4 py-2 text-xs font-mono text-right text-slate-300">
-                            {d.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-slate-600">{p.assetCurrency}</span>
-                          </td>
-                          <td className="px-4 py-2 text-xs font-mono text-right text-slate-500">
-                            {d.costRate === 0
-                              ? <span className="text-slate-700">0 (no lot)</span>
-                              : fmtRate(d.costRate, p.baseCurrency, p.assetCurrency)}
-                          </td>
-                          <td className="px-4 py-2 text-xs font-mono text-right text-slate-400">
-                            {fmtRate(d.proceedsRate, p.baseCurrency, p.assetCurrency)}
-                          </td>
-                          <td className="px-4 py-2 text-xs text-right text-slate-600">
-                            {d.lotAcquiredAt ? d.lotAcquiredAt.toISOString().slice(0, 10) : <span className="text-slate-700">—</span>}
-                          </td>
-                          <td className="px-4 py-2 text-xs font-mono text-right font-medium">
-                            <span style={{ color: d.gain >= 0 ? "var(--accent)" : "var(--red)" }}>
-                              {d.gain >= 0 ? "+" : ""}{d.gain.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-slate-600">{p.baseCurrency}</span>
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DisposalBreakdown
+              disposals={Object.values(result.pairs).flatMap((p): DisposalEntry[] =>
+                p.disposals.map((d) => ({
+                  pair: p.pair,
+                  assetCurrency: p.assetCurrency,
+                  baseCurrency: p.baseCurrency,
+                  txId: d.txId,
+                  disposedAt: d.disposedAt.toISOString(),
+                  lotAcquiredAt: d.lotAcquiredAt ? d.lotAcquiredAt.toISOString() : null,
+                  amount: d.amount,
+                  proceedsRate: d.proceedsRate,
+                  costRate: d.costRate,
+                  gain: d.gain,
+                  gainCurrency: d.gainCurrency,
+                }))
+              )}
+            />
           )}
 
           {/* Open lots detail */}
