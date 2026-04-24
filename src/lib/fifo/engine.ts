@@ -22,7 +22,8 @@ export interface TaxLot {
 }
 
 export interface Disposal {
-  txId: string;
+  txId: string;       // sell transaction ID
+  lotTxId: string | null; // buy transaction ID that created the consumed lot
   disposedAt: Date;
   amount: number;
   proceedsRate: number;
@@ -118,6 +119,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
           const consumed = Math.min(short[0], toAcquire);
           realized.get(pair)!.push({
             txId: short[3],
+            lotTxId: row.id,
             disposedAt: short[2],
             amount: consumed,
             proceedsRate: short[1],
@@ -154,6 +156,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
         const consumed = Math.min(lot[R], toDispose);
         realized.get(pair)!.push({
           txId: row.id,
+          lotTxId: lot[T],
           disposedAt: row.timestamp,
           amount: consumed,
           proceedsRate,

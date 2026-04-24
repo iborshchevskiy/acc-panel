@@ -51,6 +51,7 @@ export default async function FifoPage() {
           direction: transactionLegs.direction,
           amount: transactionLegs.amount,
           currency: transactionLegs.currency,
+          location: transactionLegs.location,
         })
         .from(transactionLegs)
         .where(inArray(transactionLegs.transactionId, txRows.map((r) => r.id)))
@@ -64,6 +65,16 @@ export default async function FifoPage() {
   }
 
   const fifoRows = legsToFifoRows(txRows, legsByTx);
+
+  function txLegsInfo(txId: string | null) {
+    if (!txId) return [];
+    return (legsByTx.get(txId) ?? []).map((l) => ({
+      direction: l.direction,
+      amount: l.amount != null ? String(l.amount) : null,
+      currency: l.currency,
+      location: l.location,
+    }));
+  }
   const result = runFifo(fifoRows, fiatSet);
 
   const gainByCurrency = result.summary.reduce<Record<string, number>>((acc, s) => {
@@ -177,6 +188,7 @@ export default async function FifoPage() {
                   assetCurrency: p.assetCurrency,
                   baseCurrency: p.baseCurrency,
                   txId: d.txId,
+                  lotTxId: d.lotTxId,
                   disposedAt: d.disposedAt.toISOString(),
                   lotAcquiredAt: d.lotAcquiredAt ? d.lotAcquiredAt.toISOString() : null,
                   amount: d.amount,
@@ -184,6 +196,8 @@ export default async function FifoPage() {
                   costRate: d.costRate,
                   gain: d.gain,
                   gainCurrency: d.gainCurrency,
+                  buyLegs: txLegsInfo(d.lotTxId),
+                  sellLegs: txLegsInfo(d.txId),
                 }))
               )}
             />
