@@ -209,13 +209,42 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
 
         if (fiatConsumed > 1e-9 && basisCarried > 1e-9) {
           const proportion = fiatConsumed / outAmt;
-          const inAmt = incAmt * proportion;
-          const inheritedRate = basisCarried / inAmt;
+          const inheritedRate = basisCarried / (incAmt * proportion);
 
           if (!queues.has(inPair)) queues.set(inPair, []);
           if (!realized.has(inPair)) realized.set(inPair, []);
-          queues.get(inPair)!.push([inAmt, inheritedRate, row.timestamp, row.id, inAmt]);
-          acquired.set(inPair, (acquired.get(inPair) ?? 0) + inAmt);
+
+          // Before opening new lots for the incoming fiat, close any existing
+          // shorts for it (e.g. the exchange previously gave this fiat before
+          // sourcing it and recorded a short).
+          let toAcquire = incAmt * proportion;
+          if (shortQueues.has(inPair)) {
+            const shorts = shortQueues.get(inPair)!;
+            while (toAcquire > 1e-9 && shorts.length > 0) {
+              const short = shorts[0];
+              const consumed = Math.min(short[0], toAcquire);
+              realized.get(inPair)!.push({
+                txId: short[3],
+                lotTxId: row.id,
+                disposedAt: short[2],
+                amount: consumed,
+                proceedsRate: short[1],  // 0 for shorts from fiat/fiat swaps without basis
+                costRate: inheritedRate,
+                gain: (short[1] - inheritedRate) * consumed,
+                gainCurrency: baseCur,
+                lotAcquiredAt: row.timestamp,
+              });
+              short[0] -= consumed;
+              toAcquire -= consumed;
+              if (short[0] <= 1e-9) shorts.shift();
+            }
+          }
+
+          // Any remaining incoming fiat not used to close shorts becomes a new lot.
+          if (toAcquire > 1e-9) {
+            queues.get(inPair)!.push([toAcquire, inheritedRate, row.timestamp, row.id, toAcquire]);
+          }
+          acquired.set(inPair, (acquired.get(inPair) ?? 0) + incAmt * proportion);
           tradeCounts.set(inPair, (tradeCounts.get(inPair) ?? 0) + 1);
         }
 
