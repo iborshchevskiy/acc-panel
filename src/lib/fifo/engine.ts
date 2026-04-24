@@ -34,8 +34,10 @@ export interface Disposal {
 
 export interface PairResult {
   pair: string;
-  cryptoCurrency: string;
-  fiatCurrency: string;
+  /** The fiat currency being traded (EUR, CZK…) — the asset tracked by FIFO */
+  assetCurrency: string;
+  /** The base/pricing currency (USDT) — gain is expressed in this */
+  baseCurrency: string;
   lots: TaxLot[];
   disposals: Disposal[];
   totalAcquired: number;
@@ -96,19 +98,57 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
     const outFiat = fiatSet.has(outCur);
 
     if (incFiat && !outFiat) {
-      // SOLD crypto → income=fiat, outcome=crypto
-      const pair = `${outCur}/${incCur}`;
-      const proceedsRate = incAmt / outAmt;
+      // BOUGHT fiat → exchange received fiat (EUR/CZK), paid base (USDT)
+      // Asset tracked: fiat (incCur). Pricing: base (outCur).
+      const pair = `${incCur}/${outCur}`;           // e.g. EUR/USDT
+      const costRate = outAmt / incAmt;             // base per fiat unit (USDT/EUR)
+      let toAcquire = incAmt;                       // fiat acquired
+
+      if (!queues.has(pair)) queues.set(pair, []);
+      if (!realized.has(pair)) realized.set(pair, []);
+      acquired.set(pair, (acquired.get(pair) ?? 0) + incAmt);
+      tradeCounts.set(pair, (tradeCounts.get(pair) ?? 0) + 1);
+
+      // Close outstanding short positions first.
+      // Gain = (sell rate − buy rate) × fiat amount, in base currency.
+      if (shortQueues.has(pair)) {
+        const shorts = shortQueues.get(pair)!;
+        while (toAcquire > 1e-9 && shorts.length > 0) {
+          const short = shorts[0];
+          const consumed = Math.min(short[0], toAcquire);
+          realized.get(pair)!.push({
+            txId: short[3],
+            disposedAt: short[2],
+            amount: consumed,
+            proceedsRate: short[1],
+            costRate,
+            gain: (short[1] - costRate) * consumed,
+            gainCurrency: outCur,               // base currency (USDT)
+            lotAcquiredAt: row.timestamp,
+          });
+          short[0] -= consumed;
+          toAcquire -= consumed;
+          if (short[0] <= 1e-9) shorts.shift();
+        }
+      }
+
+      if (toAcquire > 1e-9) {
+        queues.get(pair)!.push([toAcquire, costRate, row.timestamp, row.id, toAcquire]);
+      }
+    } else if (!incFiat && outFiat) {
+      // SOLD fiat → exchange gave fiat (EUR/CZK), received base (USDT)
+      // Dispose fiat lots acquired earlier.
+      const pair = `${outCur}/${incCur}`;           // e.g. EUR/USDT
+      const proceedsRate = incAmt / outAmt;         // base per fiat unit (USDT/EUR)
 
       if (!queues.has(pair)) queues.set(pair, []);
       if (!realized.has(pair)) realized.set(pair, []);
       disposed.set(pair, (disposed.get(pair) ?? 0) + outAmt);
       tradeCounts.set(pair, (tradeCounts.get(pair) ?? 0) + 1);
 
-      let toDispose = outAmt;
+      let toDispose = outAmt;                       // fiat being disposed
       const queue = queues.get(pair)!;
 
-      // 1. Match against existing lots (FIFO order)
       while (toDispose > 1e-9 && queue.length > 0) {
         const lot = queue[0];
         const consumed = Math.min(lot[R], toDispose);
@@ -119,7 +159,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
           proceedsRate,
           costRate: lot[C],
           gain: (proceedsRate - lot[C]) * consumed,
-          gainCurrency: incCur,
+          gainCurrency: incCur,                   // base currency (USDT)
           lotAcquiredAt: lot[D],
         });
         lot[R] -= consumed;
@@ -127,50 +167,56 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
         if (lot[R] <= 1e-9) queue.shift();
       }
 
-      // 2. No lots available — record as a short position.
-      //    Gain is deferred until the position is covered by a subsequent BUY.
-      //    This is the correct model for exchange offices that sell before sourcing inventory.
+      // No lots — record as short (sold fiat before sourcing it).
       if (toDispose > 1e-9) {
         if (!shortQueues.has(pair)) shortQueues.set(pair, []);
         shortQueues.get(pair)!.push([toDispose, proceedsRate, row.timestamp, row.id]);
       }
-    } else if (outFiat && !incFiat) {
-      // BOUGHT crypto → outcome=fiat, income=crypto
-      const pair = `${incCur}/${outCur}`;
-      const costRate = outAmt / incAmt;
-      let toAcquire = incAmt;
+    } else if (incFiat && outFiat) {
+      // Fiat/fiat swap (e.g. USD → CZK, or EUR → CZK).
+      // The outgoing fiat may have been purchased with USDT and have open lots.
+      // Close those lots and carry the USDT cost basis forward to the incoming fiat
+      // so gain is recognised when the incoming fiat is eventually sold for USDT.
+      // No gain is recorded at the swap itself — only a basis transfer.
 
-      if (!queues.has(pair)) queues.set(pair, []);
-      if (!realized.has(pair)) realized.set(pair, []);
-      acquired.set(pair, (acquired.get(pair) ?? 0) + incAmt);
-      tradeCounts.set(pair, (tradeCounts.get(pair) ?? 0) + 1);
+      // Find if the outgoing fiat has lots from a known base currency.
+      const outPairKey = [...queues.keys()].find(
+        (k) => k.startsWith(`${outCur}/`) && (queues.get(k)?.some((q) => q[R] > 1e-9))
+      );
+      if (outPairKey) {
+        const baseCur = outPairKey.split("/")[1]; // e.g. USDT
+        const inPair  = `${incCur}/${baseCur}`;  // e.g. CZK/USDT
+        const outQueue = queues.get(outPairKey)!;
 
-      // 1. Close outstanding short positions first (exchange sold before sourcing inventory).
-      //    Gain = (sell rate − buy rate) × amount — the actual spread earned.
-      if (shortQueues.has(pair)) {
-        const shorts = shortQueues.get(pair)!;
-        while (toAcquire > 1e-9 && shorts.length > 0) {
-          const short = shorts[0];
-          const consumed = Math.min(short[0], toAcquire);
-          realized.get(pair)!.push({
-            txId: short[3],         // original SELL tx
-            disposedAt: short[2],   // when the sell happened
-            amount: consumed,
-            proceedsRate: short[1], // sell rate (known at sell time)
-            costRate,               // buy rate (known now, when inventory is sourced)
-            gain: (short[1] - costRate) * consumed,
-            gainCurrency: outCur,
-            lotAcquiredAt: row.timestamp, // when the short was covered
-          });
-          short[0] -= consumed;
-          toAcquire -= consumed;
-          if (short[0] <= 1e-9) shorts.shift();
+        let toDispose = outAmt;
+        let basisCarried = 0; // USDT basis consumed from outgoing lots
+        let fiatConsumed = 0;
+
+        while (toDispose > 1e-9 && outQueue.length > 0) {
+          const lot = outQueue[0];
+          const consumed = Math.min(lot[R], toDispose);
+          basisCarried += consumed * lot[C];
+          fiatConsumed  += consumed;
+          lot[R] -= consumed;
+          toDispose -= consumed;
+          if (lot[R] <= 1e-9) outQueue.shift();
         }
-      }
 
-      // 2. Any remaining amount not used to cover shorts → add to lot queue
-      if (toAcquire > 1e-9) {
-        queues.get(pair)!.push([toAcquire, costRate, row.timestamp, row.id, toAcquire]);
+        if (fiatConsumed > 1e-9 && basisCarried > 1e-9) {
+          // Proportional share of incoming fiat that has a backing cost basis.
+          const proportion = fiatConsumed / outAmt;
+          const inAmt = incAmt * proportion;
+          const inheritedRate = basisCarried / inAmt; // base per incoming fiat unit
+
+          if (!queues.has(inPair)) queues.set(inPair, []);
+          if (!realized.has(inPair)) realized.set(inPair, []);
+          queues.get(inPair)!.push([inAmt, inheritedRate, row.timestamp, row.id, inAmt]);
+          acquired.set(inPair, (acquired.get(inPair) ?? 0) + inAmt);
+          tradeCounts.set(inPair, (tradeCounts.get(inPair) ?? 0) + 1);
+        }
+
+        disposed.set(outPairKey, (disposed.get(outPairKey) ?? 0) + fiatConsumed);
+        tradeCounts.set(outPairKey, (tradeCounts.get(outPairKey) ?? 0) + 1);
       }
     }
   }
@@ -179,7 +225,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
   const allPairs = new Set([...queues.keys(), ...realized.keys(), ...shortQueues.keys()]);
 
   for (const pair of allPairs) {
-    const [crypto, fiat] = pair.split("/");
+    const [asset, base] = pair.split("/"); // e.g. EUR / USDT
     const queue = queues.get(pair) ?? [];
     const shorts = shortQueues.get(pair) ?? [];
     const realizedList = realized.get(pair) ?? [];
@@ -193,7 +239,6 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
     }));
 
     const lotHolding = queue.reduce((s, q) => s + q[R], 0);
-    // Outstanding shorts reduce effective holding (we owe this crypto to the market)
     const shortPosition = shorts.reduce((s, sh) => s + sh[0], 0);
     const currentHolding = lotHolding - shortPosition;
 
@@ -203,8 +248,8 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
 
     pairs[pair] = {
       pair,
-      cryptoCurrency: crypto,
-      fiatCurrency: fiat,
+      assetCurrency: asset,   // fiat being traded (EUR, CZK…)
+      baseCurrency: base,     // pricing/base currency (USDT)
       lots,
       disposals: realizedList,
       totalAcquired: acquired.get(pair) ?? 0,
@@ -212,7 +257,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
       currentHolding,
       avgCost,
       totalRealizedGain,
-      gainCurrency: fiat,
+      gainCurrency: base,     // gain is in base (USDT)
     };
   }
 
@@ -228,6 +273,83 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
     .sort((a, b) => Math.abs(b.totalRealizedGain) - Math.abs(a.totalRealizedGain));
 
   return { pairs, summary };
+}
+
+// ── Leg → FifoTxRow expansion ─────────────────────────────────────────────────
+// Handles multi-leg transactions correctly by collapsing same-currency legs
+// (sum amounts) and generating one FifoTxRow per (in-currency × out-currency)
+// pair, splitting the "other side" proportionally by count when there are
+// multiple currencies on one side.
+
+interface LegLike {
+  direction: string;
+  amount: string | null;
+  currency: string | null;
+}
+
+export function legsToFifoRows<T extends LegLike>(
+  txRows: Array<{ id: string; timestamp: Date | string; transactionType: string | null }>,
+  legsByTx: Map<string, T[]>
+): FifoTxRow[] {
+  return txRows.flatMap((tx) => {
+    const txLegs = legsByTx.get(tx.id) ?? [];
+
+    // Collapse same-currency legs by summing amounts per direction
+    const inByCur = new Map<string, number>();
+    const outByCur = new Map<string, number>();
+    for (const l of txLegs) {
+      if (!l.currency || !l.amount) continue;
+      if (l.direction === "in") {
+        inByCur.set(l.currency, (inByCur.get(l.currency) ?? 0) + parseFloat(l.amount));
+      } else if (l.direction === "out") {
+        outByCur.set(l.currency, (outByCur.get(l.currency) ?? 0) + parseFloat(l.amount));
+      }
+    }
+
+    const ins = [...inByCur.entries()];
+    const outs = [...outByCur.entries()];
+    if (ins.length === 0 || outs.length === 0) return [];
+
+    const ts = tx.timestamp instanceof Date ? tx.timestamp : new Date(tx.timestamp as string);
+
+    const makeRow = (inCur: string, inAmt: number, outCur: string, outAmt: number): FifoTxRow => ({
+      id: tx.id,
+      timestamp: ts,
+      transactionType: tx.transactionType,
+      incomeAmount: inAmt.toString(),
+      incomeCurrency: inCur,
+      outcomeAmount: outAmt.toString(),
+      outcomeCurrency: outCur,
+    });
+
+    // Normal case: one in-currency, one out-currency
+    if (ins.length === 1 && outs.length === 1) {
+      return [makeRow(ins[0][0], ins[0][1], outs[0][0], outs[0][1])];
+    }
+
+    // Multiple in-currencies, single out-currency:
+    // split the out amount evenly among in-currencies so total spend is preserved
+    if (outs.length === 1) {
+      const share = outs[0][1] / ins.length;
+      return ins.map(([cur, amt]) => makeRow(cur, amt, outs[0][0], share));
+    }
+
+    // Single in-currency, multiple out-currencies:
+    // split the in amount evenly among out-currencies
+    if (ins.length === 1) {
+      const share = ins[0][1] / outs.length;
+      return outs.map(([cur, amt]) => makeRow(ins[0][0], share, cur, amt));
+    }
+
+    // Both sides have multiple currencies: pair by position (zip)
+    const rows: FifoTxRow[] = [];
+    for (let i = 0; i < Math.max(ins.length, outs.length); i++) {
+      const [inCur, inAmt] = ins[i % ins.length];
+      const [outCur, outAmt] = outs[i % outs.length];
+      rows.push(makeRow(inCur, inAmt, outCur, outAmt));
+    }
+    return rows;
+  });
 }
 
 // ── Analytics helpers ─────────────────────────────────────────────────────────

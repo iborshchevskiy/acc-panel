@@ -5,9 +5,17 @@ import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
 import { eq, and, inArray, isNull } from "drizzle-orm";
-import { runFifo, type FifoTxRow } from "@/lib/fifo/engine";
+import { runFifo, legsToFifoRows } from "@/lib/fifo/engine";
 import RefreshButton from "@/components/refresh-button";
 
+/** Display a rate in human-readable form: always show the value ≥ 1 side.
+ *  e.g. 1.05 USDT/EUR stays as-is, but 0.043 USDT/CZK flips to 23.3 CZK/USDT. */
+function fmtRate(rate: number, base: string, asset: string): string {
+  if (rate < 1 && rate > 0) {
+    return `${(1 / rate).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${asset}/${base}`;
+  }
+  return `${rate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${base}/${asset}`;
+}
 
 export default async function FifoPage() {
   const supabase = await createClient();
@@ -54,21 +62,7 @@ export default async function FifoPage() {
     legsByTx.set(leg.transactionId, arr);
   }
 
-  const fifoRows: FifoTxRow[] = txRows.map((tx) => {
-    const txLegs = legsByTx.get(tx.id) ?? [];
-    const inLeg = txLegs.find((l) => l.direction === "in");
-    const outLeg = txLegs.find((l) => l.direction === "out");
-    return {
-      id: tx.id,
-      timestamp: new Date(tx.timestamp),
-      transactionType: tx.transactionType,
-      incomeAmount: inLeg?.amount ?? null,
-      incomeCurrency: inLeg?.currency ?? null,
-      outcomeAmount: outLeg?.amount ?? null,
-      outcomeCurrency: outLeg?.currency ?? null,
-    };
-  });
-
+  const fifoRows = legsToFifoRows(txRows, legsByTx);
   const result = runFifo(fifoRows, fiatSet);
 
   const gainByCurrency = result.summary.reduce<Record<string, number>>((acc, s) => {
@@ -137,35 +131,38 @@ export default async function FifoPage() {
               <thead>
                 <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Holding</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Avg Cost</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Holding (fiat)</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Avg Buy Rate</th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Realized Gain</th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Trades</th>
                 </tr>
               </thead>
               <tbody>
-                {result.summary.map((s, i) => (
+                {result.summary.map((s, i) => {
+                  const p = result.pairs[s.pair];
+                  return (
                   <tr key={s.pair} style={{ backgroundColor: "var(--surface)", borderBottom: i < result.summary.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
                     <td className="px-4 py-2.5 text-xs font-mono text-slate-300">{s.pair}</td>
                     <td className="px-4 py-2.5 text-xs font-mono text-right text-slate-400">
                       {s.currentHolding > 1e-9
-                        ? s.currentHolding.toLocaleString(undefined, { maximumFractionDigits: 6 })
+                        ? <>{s.currentHolding.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-slate-600">{p?.assetCurrency}</span></>
                         : <span className="text-slate-700">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs font-mono text-right text-slate-400">
-                      {s.avgCost != null
-                        ? s.avgCost.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                      {s.avgCost != null && p
+                        ? fmtRate(s.avgCost, p.baseCurrency, p.assetCurrency)
                         : <span className="text-slate-700">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs font-mono text-right">
                       <span style={{ color: s.totalRealizedGain >= 0 ? "var(--accent)" : "var(--red)" }}>
                         {s.totalRealizedGain >= 0 ? "+" : ""}
-                        {s.totalRealizedGain.toLocaleString(undefined, { maximumFractionDigits: 2 })} {s.gainCurrency}
+                        {s.totalRealizedGain.toLocaleString(undefined, { maximumFractionDigits: 4 })} {s.gainCurrency}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-xs text-slate-600 text-right">{s.tradeCount}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -175,15 +172,15 @@ export default async function FifoPage() {
             <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
               <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <h2 className="text-sm font-medium text-slate-300">Disposal breakdown</h2>
-                <p className="text-xs text-slate-600 mt-0.5">How each realized gain was calculated: gain = (sell rate − cost rate) × amount</p>
+                <p className="text-xs text-slate-600 mt-0.5">gain = (sell rate − buy rate) × fiat amount, in base currency</p>
               </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Date</th>
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Amount</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Cost rate</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Fiat amount</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Buy rate</th>
                     <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Sell rate</th>
                     <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Lot acquired</th>
                     <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Gain</th>
@@ -191,36 +188,33 @@ export default async function FifoPage() {
                 </thead>
                 <tbody>
                   {Object.values(result.pairs).flatMap((p) =>
-                    p.disposals.map((d, i) => {
-                      const isLast = i === p.disposals.length - 1 && p === Object.values(result.pairs).at(-1);
-                      return (
+                    p.disposals.map((d, i) => (
                         <tr key={`${p.pair}-d-${i}`} style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                           <td className="px-4 py-2 text-xs font-mono text-slate-500">
                             {d.disposedAt.toISOString().slice(0, 10)}
                           </td>
                           <td className="px-4 py-2 text-xs font-mono text-slate-400">{p.pair}</td>
                           <td className="px-4 py-2 text-xs font-mono text-right text-slate-300">
-                            {d.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {p.cryptoCurrency}
+                            {d.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-slate-600">{p.assetCurrency}</span>
                           </td>
                           <td className="px-4 py-2 text-xs font-mono text-right text-slate-500">
                             {d.costRate === 0
                               ? <span className="text-slate-700">0 (no lot)</span>
-                              : <>{d.costRate.toLocaleString(undefined, { maximumFractionDigits: 6 })} {p.fiatCurrency}</>}
+                              : fmtRate(d.costRate, p.baseCurrency, p.assetCurrency)}
                           </td>
                           <td className="px-4 py-2 text-xs font-mono text-right text-slate-400">
-                            {d.proceedsRate.toLocaleString(undefined, { maximumFractionDigits: 6 })} {p.fiatCurrency}
+                            {fmtRate(d.proceedsRate, p.baseCurrency, p.assetCurrency)}
                           </td>
                           <td className="px-4 py-2 text-xs text-right text-slate-600">
                             {d.lotAcquiredAt ? d.lotAcquiredAt.toISOString().slice(0, 10) : <span className="text-slate-700">—</span>}
                           </td>
                           <td className="px-4 py-2 text-xs font-mono text-right font-medium">
                             <span style={{ color: d.gain >= 0 ? "var(--accent)" : "var(--red)" }}>
-                              {d.gain >= 0 ? "+" : ""}{d.gain.toLocaleString(undefined, { maximumFractionDigits: 4 })} {p.fiatCurrency}
+                              {d.gain >= 0 ? "+" : ""}{d.gain.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-slate-600">{p.baseCurrency}</span>
                             </span>
                           </td>
                         </tr>
-                      );
-                    })
+                      ))
                   )}
                 </tbody>
               </table>
@@ -254,13 +248,13 @@ export default async function FifoPage() {
                             {lot.acquiredAt.toISOString().slice(0, 10)}
                           </td>
                           <td className="px-4 py-2.5 text-xs font-mono text-right text-slate-300">
-                            {lot.remainingAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {p.cryptoCurrency}
+                            {lot.remainingAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-slate-600">{p.assetCurrency}</span>
                           </td>
                           <td className="px-4 py-2.5 text-xs font-mono text-right text-slate-400">
-                            {lot.costRate.toLocaleString(undefined, { maximumFractionDigits: 4 })} {p.fiatCurrency}
+                            {fmtRate(lot.costRate, p.baseCurrency, p.assetCurrency)}
                           </td>
                           <td className="px-4 py-2.5 text-xs font-mono text-right text-slate-400">
-                            {(lot.remainingAmount * lot.costRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} {p.fiatCurrency}
+                            {(lot.remainingAmount * lot.costRate).toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-slate-600">{p.baseCurrency}</span>
                           </td>
                         </tr>
                       ))

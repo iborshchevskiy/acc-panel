@@ -5,7 +5,7 @@ import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
 import { eq, and, inArray, isNull } from "drizzle-orm";
-import { runFifo, type FifoTxRow } from "@/lib/fifo/engine";
+import { runFifo, legsToFifoRows } from "@/lib/fifo/engine";
 
 export async function GET() {
   const supabase = await createClient();
@@ -45,21 +45,7 @@ export async function GET() {
     legsByTx.set(leg.transactionId, arr);
   }
 
-  const fifoRows: FifoTxRow[] = txRows.map((tx) => {
-    const txLegs = legsByTx.get(tx.id) ?? [];
-    const inLeg = txLegs.find((l) => l.direction === "in");
-    const outLeg = txLegs.find((l) => l.direction === "out");
-    return {
-      id: tx.id,
-      timestamp: new Date(tx.timestamp),
-      transactionType: tx.transactionType,
-      incomeAmount: inLeg?.amount ?? null,
-      incomeCurrency: inLeg?.currency ?? null,
-      outcomeAmount: outLeg?.amount ?? null,
-      outcomeCurrency: outLeg?.currency ?? null,
-    };
-  });
-
+  const fifoRows = legsToFifoRows(txRows, legsByTx);
   const result = runFifo(fifoRows, fiatSet);
 
   // Flatten all open lots
@@ -68,8 +54,8 @@ export async function GET() {
       .filter((lot) => lot.remainingAmount > 1e-9)
       .map((lot) => ({
         pair: pair.pair,
-        currency: pair.cryptoCurrency,
-        quoteCurrency: pair.fiatCurrency,
+        currency: pair.assetCurrency,
+        quoteCurrency: pair.baseCurrency,
         acquiredAt: lot.acquiredAt.toISOString().replace("T", " ").slice(0, 19),
         originalAmount: lot.originalAmount.toFixed(8),
         remainingAmount: lot.remainingAmount.toFixed(8),
