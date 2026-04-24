@@ -14,7 +14,7 @@ import TransactionTable from "./TransactionTable";
 const PAGE_SIZE = 50;
 
 interface PageProps {
-  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string; tx?: string }>;
 }
 
 export default async function TransactionsPage({ searchParams }: PageProps) {
@@ -23,6 +23,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const q = params.q ?? "";
   const typeFilter = params.type ?? "";
   const showForm = params.new === "1";
+  const txId = params.tx ?? "";
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -58,6 +59,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
 
   // Build where conditions — always exclude soft-deleted records
   const conditions = [eq(transactions.organizationId, orgId), isNull(transactions.deletedAt)];
+  if (txId) conditions.push(eq(transactions.id, txId));
   if (typeFilter) conditions.push(eq(transactions.transactionType, typeFilter));
   if (q) {
     const p = `%${q}%`;

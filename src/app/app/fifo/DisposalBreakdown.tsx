@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, Fragment } from "react";
+import Link from "next/link";
 
 export interface LegInfo {
   direction: string;
@@ -95,10 +96,13 @@ function ExpandPanel({ d, open }: { d: DisposalEntry; open: boolean }) {
                   Buy
                 </span>
                 {d.lotTxId && (
-                  <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}
+                  <Link href={`/app/transactions?tx=${d.lotTxId}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[10px] font-mono transition-opacity hover:opacity-60"
+                    style={{ color: "var(--text-4)" }}
                     title={d.lotTxId}>
-                    {d.lotTxId.slice(0, 8)}
-                  </span>
+                    {d.lotTxId.slice(0, 8)} ↗
+                  </Link>
                 )}
               </div>
               <div className="text-xs font-mono" style={{ color: "var(--text-3)" }}>
@@ -136,10 +140,13 @@ function ExpandPanel({ d, open }: { d: DisposalEntry; open: boolean }) {
                 <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: "var(--red)" }}>
                   Sell
                 </span>
-                <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}
+                <Link href={`/app/transactions?tx=${d.txId}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[10px] font-mono transition-opacity hover:opacity-60"
+                  style={{ color: "var(--text-4)" }}
                   title={d.txId}>
-                  {d.txId.slice(0, 8)}
-                </span>
+                  {d.txId.slice(0, 8)} ↗
+                </Link>
               </div>
               <div className="text-xs font-mono" style={{ color: "var(--text-3)" }}>
                 {d.disposedAt.slice(0, 16).replace("T", " ")}
