@@ -21,6 +21,24 @@
 /* ── Smooth everything ───────────────────────────────────────────────────── */
 html { scroll-behavior: smooth; }
 
+/* ── Standalone PWA (iPad / iPhone home-screen install) ──────────────────── */
+/* viewport-fit=cover lets the body paint into the rounded-corner safe area; */
+/* env() pads it back so the sidebar, headers, and bottom controls stay      */
+/* clear of the rounded edge and the iOS status / home-indicator zones.      */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top:    env(safe-area-inset-top);
+    padding-right:  env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left:   env(safe-area-inset-left);
+  }
+}
+/* Prevent the rubber-band overscroll glow on iOS standalone — it reveals
+   the white system background behind a dark theme. */
+@media (display-mode: standalone) {
+  html, body { overscroll-behavior: none; background: var(--bg); }
+}
+
 /* ── Custom scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
