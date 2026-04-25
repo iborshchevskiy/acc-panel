@@ -94,17 +94,12 @@ html.light {
 html { scroll-behavior: smooth; }
 
 /* ── Standalone PWA (iPad / iPhone home-screen install) ──────────────────── */
-/* viewport-fit=cover lets the body paint into the rounded-corner safe area; */
-/* env() pads it back so the sidebar, headers, and bottom controls stay      */
-/* clear of the rounded edge and the iOS status / home-indicator zones.      */
-@supports (padding: env(safe-area-inset-top)) {
-  body {
-    padding-top:    env(safe-area-inset-top);
-    padding-right:  env(safe-area-inset-right);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left:   env(safe-area-inset-left);
-  }
-}
+/* Don't pad the body — the app uses h-screen (100vh) for its layout root,
+   so any padding on body would shrink the body content area while the inner
+   wrapper still claims the full viewport, pushing content (e.g. the sidebar
+   user menu) off-screen. Apply safe-area insets directly on the elements
+   that touch screen edges instead — see sidebar.tsx and app layout. */
+
 /* Prevent the rubber-band overscroll glow on iOS standalone — it reveals
    the white system background behind a dark theme. */
 @media (display-mode: standalone) {

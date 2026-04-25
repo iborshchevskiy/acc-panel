@@ -161,6 +161,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   const pathname = usePathname();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { hasPin, lock } = useLock();
 
@@ -175,6 +176,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
       document.documentElement.classList.remove("light");
       document.documentElement.classList.add("dark");
     }
+    if (localStorage.getItem("acc-sidebar-collapsed") === "1") setCollapsed(true);
   }, []);
 
   useEffect(() => {
@@ -193,29 +195,113 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
     document.documentElement.classList.toggle("light", next === "light");
   }
 
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem("acc-sidebar-collapsed", next ? "1" : "0");
+    if (menuOpen) setMenuOpen(false);
+  }
+
   const initial = (userEmail?.[0] ?? "?").toUpperCase();
+
+  // Shared transition for text fading
+  const textStyle = (extra?: React.CSSProperties): React.CSSProperties => ({
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    opacity: collapsed ? 0 : 1,
+    maxWidth: collapsed ? 0 : 200,
+    transition: "opacity 150ms ease, max-width 220ms cubic-bezier(0.4,0,0.2,1)",
+    ...extra,
+  });
 
   return (
     <aside
-      className="flex w-56 shrink-0 flex-col"
-      style={{ backgroundColor: "var(--bg)", borderRight: "1px solid var(--border)" }}
+      className="flex shrink-0 flex-col"
+      style={{
+        width: collapsed ? 52 : 224,
+        transition: "width 220ms cubic-bezier(0.4,0,0.2,1)",
+        backgroundColor: "var(--bg)",
+        borderRight: "1px solid var(--border)",
+        overflow: "hidden",
+      }}
     >
-      {/* Logo / org */}
-      <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-bold"
-          style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}>
+      {/* Logo / org + collapse toggle */}
+      <div
+        className="flex h-14 shrink-0 items-center"
+        style={{
+          borderBottom: "1px solid var(--border)",
+          padding: collapsed ? "0 8px" : "0 8px 0 16px",
+          justifyContent: collapsed ? "center" : "flex-start",
+          gap: collapsed ? 0 : 10,
+          transition: "padding 220ms cubic-bezier(0.4,0,0.2,1), gap 220ms cubic-bezier(0.4,0,0.2,1)",
+        }}
+      >
+        {/* Logo mark — fades to zero-width when collapsed */}
+        <span
+          className="flex shrink-0 items-center justify-center rounded-md text-sm font-bold"
+          style={{
+            width: collapsed ? 0 : 28,
+            height: 28,
+            opacity: collapsed ? 0 : 1,
+            overflow: "hidden",
+            backgroundColor: "var(--accent)",
+            color: "var(--surface)",
+            transition: "width 220ms cubic-bezier(0.4,0,0.2,1), opacity 150ms ease",
+          }}
+        >
           ₿
         </span>
-        <div className="min-w-0">
+
+        {/* Org name — fades out when collapsed */}
+        <div style={textStyle({ minWidth: 0, flex: 1 })}>
           <p className="truncate text-sm font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
             {orgName ?? "AccPanel"}
           </p>
           {orgName && <p className="text-[10px] leading-tight" style={{ color: "var(--text-3)" }}>organisation</p>}
         </div>
+
+        {/* Collapse toggle — always visible, stays right-aligned or centered */}
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="flex shrink-0 items-center justify-center rounded-md"
+          style={{
+            width: 28, height: 28,
+            backgroundColor: "transparent",
+            border: "1px solid transparent",
+            color: "var(--text-4)",
+            transition: "background-color 150ms, border-color 150ms, color 150ms",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            const el = e.currentTarget as HTMLElement;
+            el.style.backgroundColor = "var(--raised-hi)";
+            el.style.borderColor = "var(--inner-border)";
+            el.style.color = "var(--text-2)";
+          }}
+          onMouseLeave={(e) => {
+            const el = e.currentTarget as HTMLElement;
+            el.style.backgroundColor = "transparent";
+            el.style.borderColor = "transparent";
+            el.style.color = "var(--text-4)";
+          }}
+        >
+          <svg
+            width="14" height="14" viewBox="0 0 14 14" fill="none"
+            style={{
+              transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 220ms cubic-bezier(0.4,0,0.2,1)",
+            }}
+          >
+            <path d="M8.5 2.5L4 7l4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M11 2.5v9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+          </svg>
+        </button>
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-px px-2 pt-3 overflow-y-auto">
+      <nav className="flex flex-1 flex-col gap-px pt-3 overflow-y-auto" style={{ paddingLeft: 8, paddingRight: 8 }}>
         {NAV_ITEMS.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -224,27 +310,45 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
-              className="flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium transition-all duration-150"
-              style={isActive ? {
-                backgroundColor: "var(--accent-lo)",
-                color: "var(--accent)",
-                boxShadow: "inset 2px 0 0 var(--accent)",
-              } : {
-                color: "var(--text-4)",
+              title={collapsed ? item.label : undefined}
+              className="flex items-center rounded-md py-[7px] text-sm font-medium transition-all duration-150"
+              style={{
+                paddingLeft: collapsed ? 0 : 12,
+                paddingRight: collapsed ? 0 : 12,
+                justifyContent: collapsed ? "center" : "flex-start",
+                gap: collapsed ? 0 : 10,
+                transition: "padding 220ms cubic-bezier(0.4,0,0.2,1), justify-content 220ms, background-color 0.15s",
+                ...(isActive ? {
+                  backgroundColor: "var(--accent-lo)",
+                  color: "var(--accent)",
+                  boxShadow: collapsed ? undefined : "inset 2px 0 0 var(--accent)",
+                } : {
+                  color: "var(--text-4)",
+                }),
               }}
             >
-              <span style={{ color: isActive ? "var(--accent)" : "var(--text-3)", transition: "color 0.15s" }}>
+              <span style={{ color: isActive ? "var(--accent)" : "var(--text-3)", transition: "color 0.15s", flexShrink: 0 }}>
                 {item.icon}
               </span>
-              {item.label}
+              <span style={textStyle()}>{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
       {/* User button + popover */}
-      <div ref={menuRef} className="relative px-2 pb-3 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-
+      <div
+        ref={menuRef}
+        className="relative pt-2"
+        style={{
+          borderTop: "1px solid var(--border)",
+          paddingLeft: 8,
+          paddingRight: 8,
+          // Stay clear of the iOS home indicator when installed as a PWA;
+          // 12px on browsers, max(12, safe-area-inset-bottom) on standalone.
+          paddingBottom: "max(12px, env(safe-area-inset-bottom, 12px))",
+        }}
+      >
         {/* Popover menu — opens upward */}
         {menuOpen && (
           <div
@@ -253,6 +357,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
               backgroundColor: "var(--surface)",
               border: "1px solid var(--border-hi)",
               boxShadow: "0 -8px 32px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04)",
+              minWidth: 180,
             }}
           >
             {/* Email header */}
@@ -324,27 +429,33 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors"
+          className="flex w-full items-center rounded-lg transition-colors"
           style={{
+            gap: collapsed ? 0 : 10,
+            padding: collapsed ? "8px 0" : "8px 10px",
+            justifyContent: collapsed ? "center" : "flex-start",
+            transition: "padding 220ms cubic-bezier(0.4,0,0.2,1)",
             backgroundColor: menuOpen ? "var(--raised-hi)" : "transparent",
             border: menuOpen ? "1px solid var(--inner-border)" : "1px solid transparent",
           }}
         >
           {/* Avatar */}
           <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-            style={{ backgroundColor: "var(--raised-hi)", color: "var(--text-2)", border: "1px solid var(--border)" }}
+            className="flex shrink-0 items-center justify-center rounded-full text-xs font-bold"
+            style={{ width: 28, height: 28, backgroundColor: "var(--raised-hi)", color: "var(--text-2)", border: "1px solid var(--border)" }}
           >
             {initial}
           </span>
-          <span className="flex-1 min-w-0 text-left truncate text-xs" style={{ color: "var(--text-3)" }}>
-            {userEmail}
+          {/* Email + chevron — hidden when collapsed */}
+          <span style={textStyle({ display: "flex", alignItems: "center", flex: 1, gap: 4, minWidth: 0 })}>
+            <span className="flex-1 text-left truncate text-xs" style={{ color: "var(--text-3)" }}>
+              {userEmail}
+            </span>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+              style={{ color: "var(--text-3)", flexShrink: 0, transform: menuOpen ? "rotate(180deg)" : undefined, transition: "transform 0.15s" }}>
+              <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </span>
-          {/* Chevron */}
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
-            style={{ color: "var(--text-3)", flexShrink: 0, transform: menuOpen ? "rotate(180deg)" : undefined, transition: "transform 0.15s" }}>
-            <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
         </button>
       </div>
     </aside>

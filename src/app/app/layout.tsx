@@ -67,7 +67,15 @@ export default async function AppLayout({
         style={{ backgroundColor: "var(--bg)" }}
       >
         <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
-        <main className="flex flex-1 flex-col overflow-y-auto" style={{ backgroundColor: "var(--bg)" }}>
+        <main
+          className="flex flex-1 flex-col overflow-y-auto"
+          style={{
+            backgroundColor: "var(--bg)",
+            // PWA standalone: keep the last scroll item clear of the iOS home
+            // indicator. No-op in regular browsers (env() falls back to 0).
+            paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          }}
+        >
           {children}
         </main>
         <FlashBanner />
