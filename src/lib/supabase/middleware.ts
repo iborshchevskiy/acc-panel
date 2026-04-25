@@ -39,8 +39,12 @@ export async function updateSession(request: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  // Redirect unauthenticated users away from /app routes
-  if (!session && request.nextUrl.pathname.startsWith("/app")) {
+  // Redirect unauthenticated users away from /app routes.
+  // Matches /app exactly and any descendant /app/* — NOT /apple-icon,
+  // /application, /apple-touch-icon.png, or anything else that merely
+  // begins with the letters "app".
+  const path = request.nextUrl.pathname;
+  if (!session && (path === "/app" || path.startsWith("/app/"))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
