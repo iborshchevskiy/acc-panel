@@ -301,7 +301,17 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-px pt-3 overflow-y-auto" style={{ paddingLeft: 8, paddingRight: 8 }}>
+      <nav
+        className="flex flex-1 flex-col gap-px pt-3 overflow-y-auto"
+        style={{
+          paddingLeft: 8,
+          paddingRight: 8,
+          // iPad/PWA: kill the rubber-band bounce inside the sidebar so the
+          // menu feels anchored when the user pans vertically.
+          overscrollBehavior: "none",
+          touchAction: "pan-y",
+        }}
+      >
         {NAV_ITEMS.map((item) => {
           const isActive =
             pathname === item.href ||

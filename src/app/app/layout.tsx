@@ -64,7 +64,13 @@ export default async function AppLayout({
     <LockProvider>
       <div
         className={`${dmSans.variable} ${ibmPlexMono.variable} flex h-screen overflow-hidden font-[family-name:var(--font-dm-sans)]`}
-        style={{ backgroundColor: "var(--bg)" }}
+        style={{
+          backgroundColor: "var(--bg)",
+          // PWA standalone (iPad/iPhone): reserve the iOS status-bar height so
+          // the sidebar and main content never slide under the system clock /
+          // wi-fi / battery icons. No-op in regular browsers (env() → 0).
+          paddingTop: "env(safe-area-inset-top, 0px)",
+        }}
       >
         <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
         <main
@@ -74,6 +80,7 @@ export default async function AppLayout({
             // PWA standalone: keep the last scroll item clear of the iOS home
             // indicator. No-op in regular browsers (env() falls back to 0).
             paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            overscrollBehavior: "none",
           }}
         >
           {children}
