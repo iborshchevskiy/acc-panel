@@ -1011,8 +1011,17 @@ export default function TransactionTable({
 
   return (
     <div className="relative">
-      <div className="overflow-hidden">
-        <table className="w-full text-sm">
+      <div
+        className="overflow-x-auto"
+        style={{
+          // iPad/PWA: let the user pan the wide table horizontally instead of
+          // clipping columns. overscroll-behavior contains the scroll so the
+          // page doesn't bounce when the user reaches the edge.
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        <table className="w-full text-sm" style={{ minWidth: 1100 }}>
           <thead>
             <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
               <th className="px-3 py-3 w-8">
