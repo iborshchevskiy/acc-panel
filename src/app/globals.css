@@ -94,7 +94,7 @@ html.light {
 html { scroll-behavior: smooth; }
 
 /* ── Standalone PWA (iPad / iPhone home-screen install) ──────────────────── */
-/* Don't pad the body — the app uses h-screen (100vh) for its layout root,
+/* Don't pad the body — the app uses h-svh (100svh) for its layout root,
    so any padding on body would shrink the body content area while the inner
    wrapper still claims the full viewport, pushing content (e.g. the sidebar
    user menu) off-screen. Apply safe-area insets directly on the elements

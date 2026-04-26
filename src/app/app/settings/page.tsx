@@ -190,7 +190,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
     <div className="flex h-full" style={{ backgroundColor:"var(--bg)" }}>
 
       {/* ── Left rail ───────────────────────────────────────────────── */}
-      <aside className="w-52 shrink-0 border-r flex flex-col pt-8 pb-6 px-4 sticky top-0 h-screen overflow-y-auto"
+      <aside className="w-52 shrink-0 border-r flex flex-col pt-8 pb-6 px-4 sticky top-0 h-svh overflow-y-auto"
         style={{ borderColor:"var(--surface-lo)", backgroundColor:"var(--bg)" }}>
 
         <div className="mb-8 px-2">

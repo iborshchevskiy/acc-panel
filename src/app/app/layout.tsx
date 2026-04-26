@@ -63,7 +63,7 @@ export default async function AppLayout({
   return (
     <LockProvider>
       <div
-        className={`${dmSans.variable} ${ibmPlexMono.variable} flex h-screen overflow-hidden font-[family-name:var(--font-dm-sans)]`}
+        className={`${dmSans.variable} ${ibmPlexMono.variable} flex h-svh overflow-hidden font-[family-name:var(--font-dm-sans)]`}
         style={{
           backgroundColor: "var(--bg)",
           // PWA standalone (iPad/iPhone): reserve the iOS status-bar height so
