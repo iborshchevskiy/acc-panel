@@ -12,6 +12,7 @@ export default async function SignupPage({
 }) {
   const params = await searchParams;
   const error = params.error;
+  const inviteRequired = Boolean(process.env.SIGNUP_INVITE_CODE);
 
   return (
     <div className="w-full space-y-6">
@@ -22,6 +23,26 @@ export default async function SignupPage({
       )}
 
       <form action={signup} className="space-y-4">
+        {inviteRequired && (
+          <div className="space-y-1.5">
+            <label
+              htmlFor="invite_code"
+              className="block text-sm font-medium text-zinc-300"
+            >
+              Invite code
+            </label>
+            <input
+              id="invite_code"
+              name="invite_code"
+              type="text"
+              required
+              autoComplete="off"
+              placeholder="closed beta — ask Ilya"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/60 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            />
+          </div>
+        )}
+
         <div className="space-y-1.5">
           <label
             htmlFor="email"
