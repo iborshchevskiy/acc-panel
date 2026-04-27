@@ -93,7 +93,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
   ];
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -113,7 +113,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
 
       {/* Edit form */}
       <form action={updateClient.bind(null, id)}
-        className="grid grid-cols-2 gap-3 rounded-xl p-4"
+        className="grid grid-cols-1 gap-3 rounded-xl p-3 sm:grid-cols-2 sm:p-4"
         style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
         <div className="flex flex-col gap-1">
           <label className="text-xs text-slate-500">Name</label>
@@ -131,7 +131,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
           <label className="text-xs text-slate-500">Note</label>
           <input name="note" defaultValue={client.note ?? ""} className="h-8 rounded-md bg-white/5 px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500" />
         </div>
-        <div className="col-span-2 flex justify-end">
+        <div className="flex justify-end sm:col-span-2">
           <button type="submit" className="h-8 rounded-md px-4 text-sm font-medium"
             style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}>Save</button>
         </div>
@@ -168,17 +168,19 @@ export default async function ClientDetailPage({ params }: PageProps) {
           )}
         </h2>
         {/* Manual add form */}
-        <form action={addClientWallet.bind(null, id)} className="flex gap-2">
+        <form action={addClientWallet.bind(null, id)} className="flex flex-col gap-2 sm:flex-row">
           <input name="address" placeholder="Wallet address" required
             className="h-8 flex-1 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
-          <select name="chain" className="h-8 rounded-md px-2 text-sm text-slate-200 outline-none" style={{ backgroundColor: "var(--inner-border)" }}>
-            <option value="TRON">TRON</option>
-            <option value="ETH">ETH</option>
-            <option value="BNB">BNB</option>
-            <option value="SOL">SOL</option>
-          </select>
-          <button type="submit" className="h-8 rounded-md px-3 text-sm font-medium"
-            style={{ backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }}>Add</button>
+          <div className="flex gap-2">
+            <select name="chain" className="h-8 flex-1 rounded-md px-2 text-sm text-slate-200 outline-none sm:flex-none" style={{ backgroundColor: "var(--inner-border)" }}>
+              <option value="TRON">TRON</option>
+              <option value="ETH">ETH</option>
+              <option value="BNB">BNB</option>
+              <option value="SOL">SOL</option>
+            </select>
+            <button type="submit" className="h-8 rounded-md px-3 text-sm font-medium"
+              style={{ backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }}>Add</button>
+          </div>
         </form>
         {allCounterpartyWallets.length > 0 && (
           <div className="flex flex-wrap gap-2">

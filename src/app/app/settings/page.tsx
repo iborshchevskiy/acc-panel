@@ -362,9 +362,9 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               {isAdmin && (
                 <div className="mt-10 pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
                   <SectionLabel>Invite member</SectionLabel>
-                  <form action={inviteMember} className="flex items-end gap-6">
+                  <form action={inviteMember} className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
                     <Field label="Email address">
-                      <UnderlineInput name="email" type="email" placeholder="user@example.com" required className="w-64" />
+                      <UnderlineInput name="email" type="email" placeholder="user@example.com" required className="w-full sm:w-64" />
                     </Field>
                     <Field label="Role">
                       <UnderlineSelect name="role" defaultValue="accountant">
@@ -487,13 +487,13 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               {isAdmin && (
                 <div className="pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
                   <SectionLabel>Add currency</SectionLabel>
-                  <form action={addCurrency} className="flex items-end gap-6">
+                  <form action={addCurrency} className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
                     <Field label="Code">
                       <UnderlineInput name="code" placeholder="USDT" required maxLength={20}
-                        className="w-20 uppercase" />
+                        className="w-full uppercase sm:w-20" />
                     </Field>
                     <Field label="Name (optional)">
-                      <UnderlineInput name="name" placeholder="Tether USD" className="w-48" />
+                      <UnderlineInput name="name" placeholder="Tether USD" className="w-full sm:w-48" />
                     </Field>
                     <Field label="Type">
                       <UnderlineSelect name="type" defaultValue="crypto">

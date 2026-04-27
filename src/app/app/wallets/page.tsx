@@ -64,7 +64,7 @@ export default async function WalletsPage() {
     .orderBy(wallets.createdAt);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -114,7 +114,8 @@ export default async function WalletsPage() {
           className="overflow-hidden rounded-xl"
           style={{ border: "1px solid var(--inner-border)" }}
         >
-          <table className="w-full text-sm table-fixed">
+         <div className="overflow-x-auto">
+          <table className="w-full text-sm sm:table-fixed" style={{ minWidth: 720 }}>
             <colgroup>
               <col className="w-28" />
               <col className="w-44" />
@@ -197,6 +198,7 @@ export default async function WalletsPage() {
               })}
             </tbody>
           </table>
+         </div>
         </div>
       )}
     </div>

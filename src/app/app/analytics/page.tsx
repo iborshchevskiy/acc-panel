@@ -242,7 +242,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
 
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Analytics</h1>
@@ -268,7 +268,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {[
           { label: "Total Txs", value: totalTxs.toLocaleString(), sub: "all time" },
           { label: "Exchange Txs", value: exchangeTxs.toLocaleString(), sub: "matched trades" },
@@ -295,7 +295,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
         {periods.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-600">No Exchange transactions found</div>
         ) : (
-          <table className="w-full text-sm">
+         <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: 640 }}>
             <thead>
               <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Period</th>
@@ -350,6 +351,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
               </tr>
             </tfoot>
           </table>
+         </div>
         )}
       </div>
 
@@ -359,7 +361,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
           <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
             <h2 className="text-sm font-medium text-slate-300">Spread / Margin by pair</h2>
           </div>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: 720 }}>
             <thead>
               <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
@@ -401,6 +404,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

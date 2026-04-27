@@ -50,7 +50,7 @@ export default async function DebtsPage() {
 
   if (rows.length === 0) {
     return (
-      <div className="flex flex-col gap-6 p-6">
+      <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Debts</h1>
           <p className="text-sm text-slate-500">Debt positions per client</p>
@@ -117,14 +117,15 @@ export default async function DebtsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
       <div>
         <h1 className="text-lg font-semibold text-slate-100">Debts</h1>
         <p className="text-sm text-slate-500">{openCount} open · {sorted.length} total clients</p>
       </div>
 
       <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
-        <table className="w-full text-sm">
+       <div className="overflow-x-auto">
+        <table className="w-full text-sm" style={{ minWidth: 640 }}>
           <thead>
             <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Client</th>
@@ -192,6 +193,7 @@ export default async function DebtsPage() {
             })}
           </tbody>
         </table>
+       </div>
       </div>
     </div>
   );

@@ -84,7 +84,7 @@ export default async function FifoPage() {
   const gainEntries = Object.entries(gainByCurrency).sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">FIFO Cost Basis</h1>
@@ -94,7 +94,7 @@ export default async function FifoPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <div className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
           <p className="text-xs text-slate-500">Realized Gain</p>
           {gainEntries.length === 0 ? (
@@ -139,7 +139,8 @@ export default async function FifoPage() {
             <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
               <h2 className="text-sm font-medium text-slate-300">Summary by pair</h2>
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ minWidth: 640 }}>
               <thead>
                 <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
@@ -177,6 +178,7 @@ export default async function FifoPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Disposals breakdown */}
@@ -209,7 +211,8 @@ export default async function FifoPage() {
               <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <h2 className="text-sm font-medium text-slate-300">Open lots</h2>
               </div>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: 640 }}>
                 <thead>
                   <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
@@ -243,6 +246,7 @@ export default async function FifoPage() {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>

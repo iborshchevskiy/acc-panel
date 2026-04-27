@@ -102,8 +102,8 @@ export default async function InvitePage({ params }: PageProps) {
 
   if (!invite) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg)" }}>
-        <div className="rounded-xl p-8 text-center max-w-md w-full"
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg)" }}>
+        <div className="rounded-xl p-5 text-center max-w-md w-full sm:p-8"
           style={{ backgroundColor: "var(--surface)", border: "1px solid var(--inner-border)" }}>
           <div className="text-3xl mb-4">⚠️</div>
           <h1 className="text-lg font-semibold text-slate-100 mb-2">Invite not found</h1>
@@ -135,8 +135,8 @@ export default async function InvitePage({ params }: PageProps) {
     .limit(1);
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg)" }}>
-      <div className="rounded-xl p-8 max-w-md w-full"
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg)" }}>
+      <div className="rounded-xl p-5 max-w-md w-full sm:p-8"
         style={{ backgroundColor: "var(--surface)", border: "1px solid var(--inner-border)" }}>
         <div className="mb-6 text-center">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4"

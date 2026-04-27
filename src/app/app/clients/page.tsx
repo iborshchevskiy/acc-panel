@@ -50,7 +50,7 @@ export default async function ClientsPage() {
     .orderBy(clients.createdAt);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Clients</h1>
@@ -59,12 +59,12 @@ export default async function ClientsPage() {
       </div>
 
       {/* Add form */}
-      <form action={addClient} className="flex flex-wrap gap-3 rounded-xl p-4"
+      <form action={addClient} className="flex flex-col gap-2 rounded-xl p-3 sm:flex-row sm:flex-wrap sm:gap-3 sm:p-4"
         style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
-        <input name="name" required placeholder="Name" className="h-9 w-36 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
-        <input name="surname" placeholder="Surname" className="h-9 w-36 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
-        <input name="tg_username" placeholder="@telegram" className="h-9 w-36 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
-        <input name="note" placeholder="Note" className="h-9 flex-1 min-w-48 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
+        <input name="name" required placeholder="Name" className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500 sm:w-36" />
+        <input name="surname" placeholder="Surname" className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500 sm:w-36" />
+        <input name="tg_username" placeholder="@telegram" className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500 sm:w-36" />
+        <input name="note" placeholder="Note" className="h-9 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500 sm:flex-1 sm:min-w-48" />
         <button type="submit" className="h-9 rounded-md px-4 text-sm font-medium transition-colors"
           style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}>Add client</button>
       </form>
@@ -77,7 +77,8 @@ export default async function ClientsPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
-          <table className="w-full text-sm">
+         <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: 560 }}>
             <thead>
               <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Name</th>
@@ -114,6 +115,7 @@ export default async function ClientsPage() {
               ))}
             </tbody>
           </table>
+         </div>
         </div>
       )}
     </div>

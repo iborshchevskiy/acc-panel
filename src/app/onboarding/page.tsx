@@ -63,11 +63,11 @@ export default function OnboardingPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-8"
+      className="min-h-screen flex items-center justify-center p-4 sm:p-8"
       style={{ backgroundColor: "var(--surface)" }}
     >
       <div
-        className="w-full max-w-md rounded-2xl border p-8"
+        className="w-full max-w-md rounded-2xl border p-5 sm:p-8"
         style={{ backgroundColor: "#161b26", borderColor: "var(--inner-border)" }}
       >
         <div className="mb-6 flex items-center gap-2.5">

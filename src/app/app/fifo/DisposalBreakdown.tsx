@@ -84,7 +84,7 @@ function ExpandPanel({ d, open }: { d: DisposalEntry; open: boolean }) {
           borderTop: open ? "1px solid var(--inner-border)" : "none",
           backgroundColor: "color-mix(in srgb, var(--surface) 60%, transparent)",
         }}>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "1fr auto 1fr" }}>
+          <div className="grid gap-3 sm:[grid-template-columns:1fr_auto_1fr]">
 
             {/* BUY side */}
             <div className="rounded-lg p-3 flex flex-col gap-2" style={{
