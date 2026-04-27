@@ -753,78 +753,144 @@ function HeroLedger() {
   );
 }
 
-// Ambient orbital — sits behind the text as a slow background animation.
-// All the bright "buttons" are gone; logos float as quiet marks at low
-// opacity. Three rings centered on the card, sized so the outer ring
-// bleeds off the right edge for visual rhythm.
-const ORBIT = {
-  outer: ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "AVAX", "DOGE"] as const,
-  mid:   ["TRX", "USDC", "ADA", "MATIC"] as const,
-  inner: ["BTC", "ETH", "SOL"] as const,
-};
+// 3D galaxy orbital — three tilted orbital planes carrying crypto logos.
+// Each level cleanly separates one transform responsibility from another so
+// CSS animation never overrides static positioning (the bug that caused
+// logos to "respawn at center" in the previous version).
+//
+// Nesting per logo, from outside in:
+//   tilt frame   — static rotateX, defines the orbital plane angle
+//   spinner      — animated rotate(Z), spins logos around the plane
+//   stub         — static rotate(angle) translateY(-radius), positions on ring
+//   counter-spin — animated rotate(Z) reverse, undoes spinner so logo
+//                  doesn't tumble as the ring carries it around
+//   counter-tilt — static rotateX(-tilt), faces logo back at the camera
+//
+// Items per ring chosen so circumference / item-size stays comfortable;
+// no two ring radii are within 50px of each other → rings never collide.
 
-function ChainOrbital() {
-  const renderRing = (
-    items: readonly string[],
-    radius: number,
-    speed: number,
-    reverse: boolean,
-    logoSize: number,
-    opacity: number,
-  ) => (
-    <div className="absolute inset-0" style={{
-      animation: `orbit-slow ${speed}s linear infinite${reverse ? " reverse" : ""}`,
-    }}>
-      {items.map((sym, i) => {
-        const angle = (i / items.length) * 2 * Math.PI;
-        const x = Math.cos(angle) * radius;
-        const y = Math.sin(angle) * radius;
-        return (
-          <div key={`${sym}-${i}`}
-            className="absolute flex items-center justify-center"
-            style={{
-              top: "50%", left: "50%",
-              width: logoSize, height: logoSize,
-              transform: `translate(calc(${x}px - 50%), calc(${y}px - 50%))`,
-              opacity,
-              filter: "saturate(0.7)",
-              // Counter-rotate so the logo stays upright as the ring spins
-              animation: `orbit-slow ${speed}s linear infinite${reverse ? "" : " reverse"}`,
-            }}>
-            <CryptoLogo symbol={sym} size={logoSize} />
-          </div>
-        );
-      })}
+const ORBIT_PLANES = [
+  { items: ["BTC","ETH","USDT","BNB","SOL","XRP","AVAX","DOGE"] as const,
+    radius: 230, tilt: 68,  speed: 110, reverse: false, size: 24, opacity: 0.36 },
+  { items: ["TRX","USDC","ADA","MATIC"] as const,
+    radius: 160, tilt: 58,  speed: 80,  reverse: true,  size: 20, opacity: 0.26 },
+  { items: ["BTC","ETH","SOL"] as const,
+    radius: 95,  tilt: 48,  speed: 55,  reverse: false, size: 18, opacity: 0.18 },
+];
+
+function Starfield() {
+  // Deterministic pseudo-random scatter so SSR matches client (no hydration
+  // mismatch). Same seed → same dots every render.
+  const dots = Array.from({ length: 36 }, (_, i) => {
+    const r = (Math.sin(i * 78.233) + 1) / 2;
+    const r2 = (Math.cos(i * 39.117) + 1) / 2;
+    const r3 = (Math.sin(i * 12.91)  + 1) / 2;
+    return {
+      top:  `${r * 100}%`,
+      left: `${r2 * 100}%`,
+      size: 1 + r3 * 1.5,
+      op:   0.10 + r3 * 0.18,
+    };
+  });
+  return (
+    <div className="absolute inset-0 pointer-events-none">
+      {dots.map((d, i) => (
+        <span key={i} className="absolute rounded-full"
+          style={{
+            top: d.top, left: d.left,
+            width: d.size, height: d.size,
+            backgroundColor: "var(--text-1)",
+            opacity: d.op,
+          }} />
+      ))}
     </div>
   );
+}
 
+function ChainOrbital() {
   return (
     <div aria-hidden className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-      {/* Center the orbital on the card */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative" style={{ width: 0, height: 0 }}>
-          {/* Decorative dashed rings */}
-          {[420, 300, 180].map((d, i) => (
-            <div key={i} className="absolute rounded-full"
-              style={{
-                top: "50%", left: "50%",
-                transform: "translate(-50%, -50%)",
-                width: d, height: d,
-                border: `1px dashed color-mix(in srgb, var(--accent) ${10 - i*2}%, transparent)`,
-              }} />
-          ))}
+      {/* Galaxy backdrop */}
+      <Starfield />
 
-          {/* Three orbital rings — slow, ambient, low-opacity */}
-          {renderRing(ORBIT.outer, 210, 90, false, 22, 0.30)}
-          {renderRing(ORBIT.mid,   150, 70, true,  18, 0.22)}
-          {renderRing(ORBIT.inner,  90, 50, false, 16, 0.18)}
+      {/* 3D scene root — perspective gives depth to all child rotateX */}
+      <div className="absolute inset-0 flex items-center justify-center"
+        style={{ perspective: "1400px", perspectiveOrigin: "70% 50%" }}>
+        <div className="relative" style={{ width: 0, height: 0, transformStyle: "preserve-3d" }}>
+
+          {ORBIT_PLANES.map((plane, planeIdx) => {
+            const dir        = plane.reverse ? "reverse" : "";
+            const counterDir = plane.reverse ? "" : "reverse";
+
+            return (
+              <div key={planeIdx} className="absolute"
+                style={{
+                  top: 0, left: 0, width: 0, height: 0,
+                  transformStyle: "preserve-3d",
+                  // Static tilt — rotates the orbital plane in 3D
+                  transform: `rotateZ(${planeIdx * 30}deg) rotateX(${plane.tilt}deg)`,
+                }}>
+                {/* Faint elliptical guide ring (in the tilted plane) */}
+                <div className="absolute rounded-full"
+                  style={{
+                    top: -plane.radius, left: -plane.radius,
+                    width: plane.radius * 2, height: plane.radius * 2,
+                    border: "1px dashed color-mix(in srgb, var(--accent) 8%, transparent)",
+                  }} />
+
+                {/* Spinner — only animates rotate(Z); no static transform */}
+                <div className="absolute"
+                  style={{
+                    top: 0, left: 0, width: 0, height: 0,
+                    transformStyle: "preserve-3d",
+                    animation: `orbit-slow ${plane.speed}s linear infinite ${dir}`,
+                  }}>
+                  {plane.items.map((sym, i) => {
+                    const angle = (i / plane.items.length) * 360;
+                    return (
+                      <div key={`${planeIdx}-${i}`} className="absolute"
+                        style={{
+                          // Stub: pure positioning at angle on the ring
+                          top: 0, left: 0, width: 0, height: 0,
+                          transformStyle: "preserve-3d",
+                          transform: `rotate(${angle}deg) translateY(-${plane.radius}px)`,
+                        }}>
+                        {/* Counter-spinner — only animates reverse rotate */}
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: -plane.size / 2, left: -plane.size / 2,
+                            width: plane.size, height: plane.size,
+                            transformStyle: "preserve-3d",
+                            animation: `orbit-slow ${plane.speed}s linear infinite ${counterDir}`,
+                          }}>
+                          {/* Counter-angle + counter-tilt — faces the camera */}
+                          <div
+                            style={{
+                              width: "100%", height: "100%",
+                              transform: `rotate(-${angle}deg) rotateX(-${plane.tilt}deg) rotateZ(-${planeIdx * 30}deg)`,
+                              opacity: plane.opacity,
+                              filter: "saturate(0.65)",
+                            }}>
+                            <CryptoLogo symbol={sym} size={plane.size} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
         </div>
       </div>
 
-      {/* Subtle radial vignette so logos are quietest where text sits */}
+      {/* Vignette so the type stays crisp on the left */}
       <div className="absolute inset-0"
         style={{
-          background: "radial-gradient(ellipse 55% 80% at 28% 50%, var(--surface) 0%, color-mix(in srgb, var(--surface) 70%, transparent) 35%, transparent 75%)",
+          background:
+            "radial-gradient(ellipse 50% 75% at 26% 50%, var(--surface) 0%, color-mix(in srgb, var(--surface) 70%, transparent) 38%, transparent 78%)",
         }} />
     </div>
   );
