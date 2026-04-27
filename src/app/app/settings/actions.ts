@@ -59,11 +59,19 @@ export async function inviteMember(formData: FormData) {
   await db.insert(pendingInvites).values({ organizationId: orgId, email, role, token, invitedBy: userId, expiresAt });
   await logAudit({ organizationId: orgId, userId, userEmail, action: "invite_sent", entityType: "invite", details: { email, role } });
 
-  // Send invite email
-  await sendInviteEmail({ email, token, orgId, inviterEmail: userEmail });
+  // Try to send the email. We always create the invite row so the link can
+  // be copied manually from the Pending invites list — that's the fallback
+  // when no email provider is configured.
+  const result = await sendInviteEmail({ email, token, orgId, inviterEmail: userEmail });
 
   revalidatePath("/app/settings");
-  flashOk("/app/settings?tab=members", `Invite sent to ${email}`);
+  if (result === "sent") {
+    flashOk("/app/settings?tab=members", `Invite email sent to ${email}`);
+  } else if (result === "error") {
+    flashOk("/app/settings?tab=members", `Invite created — email delivery failed, copy the link below`);
+  } else {
+    flashOk("/app/settings?tab=members", `Invite created — no email service configured, copy the link below`);
+  }
 }
 
 export async function cancelInvite(formData: FormData) {
