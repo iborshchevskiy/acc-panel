@@ -275,31 +275,60 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               <p className="text-[11px]" style={{ color: "var(--text-4)" }}>Try a wider date range</p>
             </div>
           ) : (
-            <div className="mt-3 flex flex-col gap-3">
-              {mtdNetFlowRows.slice(0, 5).map((r, idx) => {
-                const v = parseFloat(r.net_flow);
-                const allTime = allTimeByCurrency.get(r.currency) ?? 0;
-                const isHero = idx === 0;
-                return (
-                  <div key={r.currency} className="flex items-baseline justify-between gap-3">
-                    <div className="flex items-baseline gap-2 min-w-0">
-                      <span
-                        className={`font-[family-name:var(--font-ibm-plex-mono)] font-medium leading-none tabular-nums ${isHero ? "text-3xl sm:text-4xl" : "text-base"}`}
-                        style={{ color: v >= 0 ? "var(--accent)" : "var(--red)" }}
-                      >
+            <>
+              {/* Mobile: horizontal currency tiles (3-up grid; scrollable if many) */}
+              <div className="mt-3 flex gap-2 overflow-x-auto sm:hidden -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
+                {mtdNetFlowRows.slice(0, 6).map((r) => {
+                  const v = parseFloat(r.net_flow);
+                  const allTime = allTimeByCurrency.get(r.currency) ?? 0;
+                  const positive = v >= 0;
+                  return (
+                    <div key={r.currency}
+                      className="shrink-0 basis-[calc((100%-1rem)/3)] min-w-[100px] rounded-lg px-2.5 py-2 flex flex-col"
+                      style={{
+                        backgroundColor: positive ? "var(--green-chip-bg)" : "var(--red-chip-bg)",
+                        border: `1px solid ${positive ? "var(--green-border-lo)" : "var(--red-border-lo)"}`,
+                      }}>
+                      <span className="font-[family-name:var(--font-ibm-plex-mono)] text-base font-medium leading-none tabular-nums truncate"
+                        style={{ color: positive ? "var(--accent)" : "var(--red)" }}>
                         {fmt(v)}
                       </span>
-                      <span className={`font-medium ${isHero ? "text-sm" : "text-xs"}`} style={{ color: "var(--text-4)" }}>
-                        {r.currency}
+                      <span className="mt-1 text-[10px] font-medium" style={{ color: "var(--text-3)" }}>{r.currency}</span>
+                      <span className="mt-1.5 text-[9px] font-mono tabular-nums truncate" style={{ color: "var(--text-4)" }}>
+                        all {fmt(allTime)}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono tabular-nums shrink-0 text-right" style={{ color: "var(--text-4)" }}>
-                      <span className="opacity-60">all · </span>{fmt(allTime)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop: stacked rows with hero number */}
+              <div className="mt-3 hidden sm:flex flex-col gap-3">
+                {mtdNetFlowRows.slice(0, 5).map((r, idx) => {
+                  const v = parseFloat(r.net_flow);
+                  const allTime = allTimeByCurrency.get(r.currency) ?? 0;
+                  const isHero = idx === 0;
+                  return (
+                    <div key={r.currency} className="flex items-baseline justify-between gap-3">
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span
+                          className={`font-[family-name:var(--font-ibm-plex-mono)] font-medium leading-none tabular-nums ${isHero ? "text-4xl" : "text-base"}`}
+                          style={{ color: v >= 0 ? "var(--accent)" : "var(--red)" }}
+                        >
+                          {fmt(v)}
+                        </span>
+                        <span className={`font-medium ${isHero ? "text-sm" : "text-xs"}`} style={{ color: "var(--text-4)" }}>
+                          {r.currency}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono tabular-nums shrink-0 text-right" style={{ color: "var(--text-4)" }}>
+                        <span className="opacity-60">all · </span>{fmt(allTime)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </div>
