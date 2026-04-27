@@ -41,17 +41,18 @@ export const viewport: Viewport = {
   ],
 };
 
-// Inline script runs before React hydration — prevents flash of wrong theme
+// Inline script runs before React hydration — prevents flash of wrong theme.
+// Supported themes: dark (default), light, sepia, amber, plum.
 const antiFlashScript = `
 (function(){
   try {
     var t = localStorage.getItem('acc-theme');
-    if (t === 'light') {
-      document.documentElement.classList.add('light');
-    } else {
-      document.documentElement.classList.add('dark');
-    }
-  } catch(e){}
+    var allowed = { dark:1, light:1, sepia:1, amber:1, plum:1 };
+    if (!t || !allowed[t]) t = 'dark';
+    document.documentElement.classList.add(t);
+  } catch(e){
+    document.documentElement.classList.add('dark');
+  }
 })();
 `;
 

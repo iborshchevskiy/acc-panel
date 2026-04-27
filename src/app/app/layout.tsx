@@ -5,6 +5,7 @@ import Sidebar from "@/components/sidebar";
 import FlashBanner from "@/components/flash-banner";
 import LockProvider from "@/components/LockProvider";
 import LockScreen from "@/components/LockScreen";
+import { ThemeSync } from "@/components/ThemeManager";
 import { db } from "@/db/client";
 import { organizationMembers, organizations } from "@/db/schema/system";
 import { eq } from "drizzle-orm";
@@ -85,6 +86,7 @@ export default async function AppLayout({
         <FlashBanner />
       </div>
       <LockScreen />
+      <ThemeSync />
     </LockProvider>
   );
 }

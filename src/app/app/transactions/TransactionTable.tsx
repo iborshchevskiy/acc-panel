@@ -3,6 +3,7 @@
 import { useState, useTransition, useRef, useEffect, useActionState, useCallback, Fragment } from "react";
 import ClientPicker, { type ClientOption } from "./ClientPicker";
 import { deleteTransaction, bulkSetType, bulkAssignClient, bulkDelete, bulkSetStatus, updateTransaction, setTransactionStatus, setTransactionType, updateLeg, createLeg } from "./actions";
+import { trimTrailingZeros } from "@/lib/format";
 
 export interface TxRow {
   id: string;
@@ -12,6 +13,7 @@ export interface TxRow {
   txHash: string | null;
   comment: string | null;
   status: string | null;
+  isMatched: boolean;
 }
 
 export interface LegRow {
@@ -537,7 +539,7 @@ function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes, onSave
   onSaved?: () => void;
 }) {
   const [editing, setEditing]   = useState(false);
-  const [amount, setAmount]     = useState(leg?.amount ?? "");
+  const [amount, setAmount]     = useState(trimTrailingZeros(leg?.amount));
   const [currency, setCurrency] = useState(leg?.currency ?? "");
   const [location, setLocation] = useState(leg?.location ?? "");
   const [saving, setSaving]     = useState(false);
@@ -547,7 +549,7 @@ function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes, onSave
 
   useEffect(() => {
     if (!editing) {
-      setAmount(leg?.amount ?? "");
+      setAmount(trimTrailingZeros(leg?.amount));
       setCurrency(leg?.currency ?? "");
       setLocation(leg?.location ?? "");
     }
@@ -567,7 +569,7 @@ function InlineLegEditor({ leg, txId, direction, readonly, currencyCodes, onSave
   }
 
   function cancel() {
-    setAmount(leg?.amount ?? "");
+    setAmount(trimTrailingZeros(leg?.amount));
     setCurrency(leg?.currency ?? "");
     setLocation(leg?.location ?? "");
     setEditing(false);
@@ -841,7 +843,7 @@ function InlineEditForm({ tx, legRows, txTypes, currencyCodes, onClose }: {
           {inLegs.map((leg, i) => (
             <div key={i} className="flex items-center gap-2">
               <input name="in_amount" type="text" inputMode="decimal" placeholder="0.00"
-                value={leg.amount} onChange={(e) => updLeg(inLegs, setInLegs, i, "amount", e.target.value)}
+                value={trimTrailingZeros(leg.amount)} onChange={(e) => updLeg(inLegs, setInLegs, i, "amount", e.target.value)}
                 className="w-24 bg-transparent border-b pb-1 text-sm font-mono outline-none focus:border-emerald-500"
                 style={{ borderColor: "var(--inner-border)", color: "var(--text-1)" }} />
               <CurrencyCombobox nameAttr="in_currency" value={leg.currency} codes={allCodes(leg)}
@@ -881,7 +883,7 @@ function InlineEditForm({ tx, legRows, txTypes, currencyCodes, onClose }: {
           {outLegs.map((leg, i) => (
             <div key={i} className="flex items-center gap-2">
               <input name="out_amount" type="text" inputMode="decimal" placeholder="0.00"
-                value={leg.amount} onChange={(e) => updLeg(outLegs, setOutLegs, i, "amount", e.target.value)}
+                value={trimTrailingZeros(leg.amount)} onChange={(e) => updLeg(outLegs, setOutLegs, i, "amount", e.target.value)}
                 className="w-24 bg-transparent border-b pb-1 text-sm font-mono outline-none focus:border-emerald-500"
                 style={{ borderColor: "var(--inner-border)", color: "var(--text-1)" }} />
               <CurrencyCombobox nameAttr="out_currency" value={leg.currency} codes={allCodes(leg)}
@@ -912,6 +914,25 @@ function InlineEditForm({ tx, legRows, txTypes, currencyCodes, onClose }: {
         </button>
       </div>
     </form>
+  );
+}
+
+// ── Unmatched indicator ───────────────────────────────────────────────────────
+
+function ReviewBadge() {
+  return (
+    <div className="flex items-center gap-1.5 mb-1">
+      <span className="relative flex shrink-0" style={{ width: 7, height: 7 }}>
+        <span className="animate-ping absolute inset-0 rounded-full opacity-60"
+          style={{ backgroundColor: "var(--amber)" }} />
+        <span className="relative rounded-full"
+          style={{ width: 7, height: 7, backgroundColor: "var(--amber)", display: "block" }} />
+      </span>
+      <span className="text-[10px] font-semibold tracking-wide uppercase"
+        style={{ color: "var(--amber)", letterSpacing: "0.04em" }}>
+        Review
+      </span>
+    </div>
   );
 }
 
@@ -1085,6 +1106,7 @@ export default function TransactionTable({
                     </button>
                   </td>
                   <td className="px-4 pt-3 pb-3">
+                    {tx.type === "Trade" && (!tx.transactionType || !txTypes.includes(tx.transactionType)) && !tx.status && !clientByTx[tx.id] && <ReviewBadge />}
                     <TypePicker txId={tx.id} current={tx.transactionType} txTypes={txTypes} />
                   </td>
                   <td className="px-4 pt-3 pb-3">

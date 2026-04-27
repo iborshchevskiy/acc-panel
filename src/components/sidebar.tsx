@@ -157,9 +157,15 @@ interface SidebarProps {
   orgName?: string;
 }
 
+type ThemeKey = "dark" | "light" | "sepia" | "amber" | "plum";
+const THEME_KEYS: ThemeKey[] = ["dark", "light", "sepia", "amber", "plum"];
+const THEME_NAMES: Record<ThemeKey, string> = {
+  dark: "Midnight", light: "Snow", sepia: "Sepia", amber: "Amber", plum: "Plum",
+};
+
 export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   const pathname = usePathname();
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<ThemeKey>("dark");
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -167,16 +173,11 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   const { hasPin, lock } = useLock();
 
   useEffect(() => {
-    const stored = localStorage.getItem("acc-theme");
-    if (stored === "light") {
-      setTheme("light");
-      document.documentElement.classList.remove("dark");
-      document.documentElement.classList.add("light");
-    } else {
-      setTheme("dark");
-      document.documentElement.classList.remove("light");
-      document.documentElement.classList.add("dark");
-    }
+    const stored = (localStorage.getItem("acc-theme") ?? "dark") as ThemeKey;
+    const t: ThemeKey = THEME_KEYS.includes(stored) ? stored : "dark";
+    setTheme(t);
+    document.documentElement.classList.remove(...THEME_KEYS);
+    document.documentElement.classList.add(t);
     if (localStorage.getItem("acc-sidebar-collapsed") === "1") setCollapsed(true);
   }, []);
 
@@ -201,11 +202,19 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   }, [mobileOpen]);
 
   function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
+    // Cycle through all themes; full picker lives in Settings → Appearance.
+    const idx = THEME_KEYS.indexOf(theme);
+    const next = THEME_KEYS[(idx + 1) % THEME_KEYS.length];
     setTheme(next);
     localStorage.setItem("acc-theme", next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-    document.documentElement.classList.toggle("light", next === "light");
+    document.documentElement.classList.remove(...THEME_KEYS);
+    document.documentElement.classList.add(next);
+    void fetch("/api/lock-settings", {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ theme: next }),
+    });
   }
 
   function toggleCollapsed() {
@@ -430,8 +439,8 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
                 className="flex items-center gap-3 w-full px-3 py-3 rounded-md text-sm"
                 style={{ color: "var(--text-2)" }}
               >
-                {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-                {theme === "dark" ? "Light mode" : "Dark mode"}
+                {theme === "dark" || theme === "amber" || theme === "plum" ? <SunIcon /> : <MoonIcon />}
+                Theme · {THEME_NAMES[theme]}
               </button>
               {hasPin && (
                 <button
@@ -641,8 +650,8 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
             >
-              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-              {theme === "dark" ? "Light mode" : "Dark mode"}
+              {theme === "dark" || theme === "amber" || theme === "plum" ? <SunIcon /> : <MoonIcon />}
+              Theme · {THEME_NAMES[theme]}
             </button>
 
             {/* Lock screen */}

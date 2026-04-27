@@ -16,6 +16,7 @@ interface LockSettingsBody {
   pinHash?: string | null;
   matrixKey?: MatrixKeyData | null;
   autolockMinutes?: number;
+  theme?: string | null;
 }
 
 async function requireUserId(): Promise<string | NextResponse> {
@@ -37,6 +38,7 @@ export async function GET() {
     pinHash: row?.pinHash ?? null,
     matrixKey: row?.matrixKey ?? null,
     autolockMinutes: row?.autolockMinutes ?? 0,
+    theme: row?.theme ?? null,
   });
 }
 
@@ -52,6 +54,7 @@ export async function PUT(req: Request) {
   if ("pinHash"         in body) patch.pinHash         = body.pinHash ?? null;
   if ("matrixKey"       in body) patch.matrixKey       = body.matrixKey ?? null;
   if ("autolockMinutes" in body) patch.autolockMinutes = Math.max(0, Math.floor(body.autolockMinutes ?? 0));
+  if ("theme"           in body) patch.theme           = body.theme ?? null;
 
   await db.insert(userLockSettings)
     .values({ userId, ...patch })

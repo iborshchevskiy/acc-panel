@@ -11,6 +11,7 @@ import {
 } from "./actions";
 import SecurityTab from "./SecurityTab";
 import CopyButton from "@/components/copy-button";
+import { ThemePicker } from "@/components/ThemeManager";
 
 interface PageProps { searchParams: Promise<{ tab?: string; auditPage?: string }> }
 
@@ -51,6 +52,7 @@ const TABS = [
   { id:"members",    label:"Members",     icon:"◈" },
   { id:"currencies", label:"Currencies",  icon:"◎" },
   { id:"types",      label:"Tx Types",    icon:"◇" },
+  { id:"appearance", label:"Appearance",  icon:"◐" },
   { id:"audit",      label:"Audit Log",   icon:"≡" },
   { id:"security",   label:"Security",    icon:"⚿" },
 ] as const;
@@ -580,6 +582,22 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                   </p>
                 </div>
               )}
+            </section>
+          )}
+
+          {/* ── APPEARANCE ────────────────────────────────────── */}
+          {activeTab === "appearance" && (
+            <section>
+              <SectionLabel>Theme</SectionLabel>
+              <p className="text-sm mb-6 max-w-md" style={{ color: "var(--text-3)" }}>
+                Pick a palette. Your choice syncs across browsers and devices
+                signed in with this account.
+              </p>
+              <ThemePicker />
+              <p className="mt-6 text-xs" style={{ color: "var(--inner-border)" }}>
+                Tap the theme button in the sidebar to cycle through quickly,
+                or pick one here for a permanent setting.
+              </p>
             </section>
           )}
 

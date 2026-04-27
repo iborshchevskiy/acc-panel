@@ -82,6 +82,7 @@ export const userLockSettings = pgTable("user_lock_settings", {
   pinHash: text("pin_hash"),            // cyrb53 hash of the PIN, nullable
   matrixKey: jsonb("matrix_key"),       // MatrixKeyData JSON, nullable
   autolockMinutes: integer("autolock_minutes").default(0).notNull(),
+  theme: text("theme"),                 // theme key: midnight | snow | sepia | amber | plum
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

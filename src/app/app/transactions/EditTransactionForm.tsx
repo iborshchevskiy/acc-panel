@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateTransaction } from "./actions";
+import { trimTrailingZeros } from "@/lib/format";
 
 interface LegData {
   direction: "in" | "out";
@@ -196,8 +197,9 @@ export default function EditTransactionForm({ tx, legs, txTypes, currencyCodes, 
   const router = useRouter();
   const [state, action, pending] = useActionState(updateTransaction, null);
 
-  const initialIn = legs.filter((l) => l.direction === "in");
-  const initialOut = legs.filter((l) => l.direction === "out");
+  const cleanAmt = (l: LegData): LegData => ({ ...l, amount: trimTrailingZeros(l.amount) });
+  const initialIn  = legs.filter((l) => l.direction === "in").map(cleanAmt);
+  const initialOut = legs.filter((l) => l.direction === "out").map(cleanAmt);
 
   const [inLegs, setInLegs] = useState<LegData[]>(
     initialIn.length > 0 ? initialIn : [{ direction: "in", amount: "", currency: "", location: "" }]

@@ -90,6 +90,123 @@ html.light {
   --red-border-lo:     rgba(185,28,28,.3);
 }
 
+/* ── Theme: Sepia (warm beige, low-glare reading) ────────────────────────── */
+html.sepia {
+  color-scheme: light;
+  --bg:            #f3ecdf;
+  --surface:       #faf4e7;
+  --surface-lo:    #f0e7d3;
+  --raised:        #ebdfc7;
+  --raised-hi:     #e2d3b6;
+  --border:        #d8c69f;
+  --inner-border:  #c8b489;
+  --border-hi:     #ad9466;
+  --accent:        #7a5910;   /* deep amber-brown */
+  --accent-lo:     rgba(122,89,16,0.10);
+  --accent-md:     rgba(122,89,16,0.18);
+  --text-1:        #2b2008;
+  --text-2:        #5a4621;
+  --text-3:        #7a6438;
+  --text-4:        #66522a;
+  --text-5:        #856b3c;
+  --red:           #a13822;
+  --blue:          #3a5a8a;
+  --indigo:        #5247a8;
+  --violet:        #735498;
+  --amber:         #946b13;
+  --green-btn-bg:      rgba(122,89,16,.10);
+  --green-btn-border:  rgba(122,89,16,.28);
+  --green-alert-bg:    rgba(122,89,16,.07);
+  --green-alert-border:rgba(122,89,16,.22);
+  --green-chip-bg:     rgba(122,89,16,.10);
+  --red-alert-bg:      rgba(161,56,34,.06);
+  --red-alert-border:  rgba(161,56,34,.20);
+  --red-chip-bg:       rgba(161,56,34,.10);
+  --blue-chip-bg:      rgba(58,90,138,.10);
+  --slate-chip-bg:     rgba(112,90,55,.10);
+  --indigo-chip-bg:    rgba(82,71,168,.10);
+  --green-border-lo:   rgba(122,89,16,.30);
+  --red-border-lo:     rgba(161,56,34,.30);
+}
+
+/* ── Theme: Amber Terminal (CRT-green/amber on near-black, retro) ────────── */
+html.amber {
+  color-scheme: dark;
+  --bg:            #0a0703;
+  --surface:       #110c04;
+  --surface-lo:    #1a1206;
+  --raised:        #1f1608;
+  --raised-hi:     #261c0a;
+  --border:        #2c1f0b;
+  --inner-border:  #36260e;
+  --border-hi:     #4a3414;
+  --accent:        #fbbf24;   /* vivid amber */
+  --accent-lo:     rgba(251,191,36,0.10);
+  --accent-md:     rgba(251,191,36,0.18);
+  --text-1:        #f5e6c4;
+  --text-2:        #c9a96a;
+  --text-3:        #8b7239;
+  --text-4:        #a08543;
+  --text-5:        #b89656;
+  --red:           #ef4444;
+  --blue:          #60a5fa;
+  --indigo:        #818cf8;
+  --violet:        #c084fc;
+  --amber:         #fbbf24;
+  --green-btn-bg:      rgba(251,191,36,.13);
+  --green-btn-border:  rgba(251,191,36,.30);
+  --green-alert-bg:    rgba(251,191,36,.08);
+  --green-alert-border:rgba(251,191,36,.22);
+  --green-chip-bg:     rgba(251,191,36,.12);
+  --red-alert-bg:      rgba(239,68,68,.08);
+  --red-alert-border:  rgba(239,68,68,.20);
+  --red-chip-bg:       rgba(239,68,68,.12);
+  --blue-chip-bg:      rgba(96,165,250,.12);
+  --slate-chip-bg:     rgba(184,150,86,.10);
+  --indigo-chip-bg:    rgba(129,140,248,.12);
+  --green-border-lo:   rgba(251,191,36,.30);
+  --red-border-lo:     rgba(239,68,68,.30);
+}
+
+/* ── Theme: Plum (deep violet, late-night ops) ───────────────────────────── */
+html.plum {
+  color-scheme: dark;
+  --bg:            #0c0814;
+  --surface:       #150f20;
+  --surface-lo:    #1c1428;
+  --raised:        #221932;
+  --raised-hi:     #2a2040;
+  --border:        #2e2548;
+  --inner-border:  #382c52;
+  --border-hi:     #463768;
+  --accent:        #a78bfa;   /* soft violet */
+  --accent-lo:     rgba(167,139,250,0.10);
+  --accent-md:     rgba(167,139,250,0.18);
+  --text-1:        #ece4ff;
+  --text-2:        #9a8cc8;
+  --text-3:        #645687;
+  --text-4:        #7c6ba0;
+  --text-5:        #8c7ab2;
+  --red:           #f87171;
+  --blue:          #60a5fa;
+  --indigo:        #a78bfa;
+  --violet:        #c084fc;
+  --amber:         #fbbf24;
+  --green-btn-bg:      rgba(167,139,250,.14);
+  --green-btn-border:  rgba(167,139,250,.30);
+  --green-alert-bg:    rgba(167,139,250,.08);
+  --green-alert-border:rgba(167,139,250,.22);
+  --green-chip-bg:     rgba(167,139,250,.12);
+  --red-alert-bg:      rgba(248,113,113,.08);
+  --red-alert-border:  rgba(248,113,113,.20);
+  --red-chip-bg:       rgba(248,113,113,.12);
+  --blue-chip-bg:      rgba(96,165,250,.12);
+  --slate-chip-bg:     rgba(140,122,178,.10);
+  --indigo-chip-bg:    rgba(167,139,250,.12);
+  --green-border-lo:   rgba(167,139,250,.30);
+  --red-border-lo:     rgba(248,113,113,.30);
+}
+
 /* ── Smooth everything ───────────────────────────────────────────────────── */
 html { scroll-behavior: smooth; }
 
