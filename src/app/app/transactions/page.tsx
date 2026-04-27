@@ -14,7 +14,7 @@ import TransactionTable from "./TransactionTable";
 const PAGE_SIZE = 50;
 
 interface PageProps {
-  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string; tx?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; type?: string; new?: string; tx?: string; review?: string }>;
 }
 
 export default async function TransactionsPage({ searchParams }: PageProps) {
@@ -24,6 +24,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const typeFilter = params.type ?? "";
   const showForm = params.new === "1";
   const txId = params.tx ?? "";
+  const reviewOnly = params.review === "1";
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -61,6 +62,24 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const conditions = [eq(transactions.organizationId, orgId), isNull(transactions.deletedAt)];
   if (txId) conditions.push(eq(transactions.id, txId));
   if (typeFilter) conditions.push(eq(transactions.transactionType, typeFilter));
+  if (reviewOnly) {
+    // Mirror the REVIEW badge logic in TransactionTable.tsx — Trade with no
+    // user-set type (or one that's no longer in the org's list), no status,
+    // and no client assignment.
+    conditions.push(
+      eq(transactions.type, "Trade"),
+      isNull(transactions.status),
+      sql`(${transactions.transactionType} IS NULL
+           OR ${transactions.transactionType} NOT IN (
+             SELECT name FROM org_transaction_types
+             WHERE organization_id = ${orgId}
+           ))`,
+      sql`NOT EXISTS (
+            SELECT 1 FROM transaction_clients tc
+            WHERE tc.transaction_id = ${transactions.id}
+          )`
+    );
+  }
   if (q) {
     const p = `%${q}%`;
     // Search both transaction fields AND leg fields (currency, wallet address)
@@ -150,17 +169,40 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   return (
     <div className="flex flex-col gap-4 p-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
-          <p className="text-sm text-slate-500">{count.toLocaleString()} total</p>
+          <p className="text-sm text-slate-500">
+            {count.toLocaleString()} {reviewOnly ? "under review" : "total"}
+          </p>
         </div>
-        <a href={newHref}
-          className="h-8 flex items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors"
-          style={{ backgroundColor: showForm ? "transparent" : "var(--green-btn-bg)", color: showForm ? "var(--text-2)" : "var(--accent)", border: showForm ? "1px solid var(--inner-border)" : "1px solid var(--green-btn-border)" }}
-        >
-          {showForm ? "Cancel" : "+ New"}
-        </a>
+        <div className="flex items-center gap-2">
+          {reviewOnly && (
+            <a href="/app/transactions"
+              className="h-8 flex items-center gap-1.5 rounded-full pl-2 pr-2.5 text-xs font-medium transition-colors"
+              style={{
+                backgroundColor: "color-mix(in srgb, var(--amber) 12%, transparent)",
+                color: "var(--amber)",
+                border: "1px solid color-mix(in srgb, var(--amber) 30%, transparent)",
+              }}
+            >
+              <span className="relative inline-flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping"
+                  style={{ backgroundColor: "var(--amber)" }} />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5"
+                  style={{ backgroundColor: "var(--amber)" }} />
+              </span>
+              Under review
+              <span className="ml-1 opacity-70">×</span>
+            </a>
+          )}
+          <a href={newHref}
+            className="h-8 flex items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors"
+            style={{ backgroundColor: showForm ? "transparent" : "var(--green-btn-bg)", color: showForm ? "var(--text-2)" : "var(--accent)", border: showForm ? "1px solid var(--inner-border)" : "1px solid var(--green-btn-border)" }}
+          >
+            {showForm ? "Cancel" : "+ New"}
+          </a>
+        </div>
       </div>
 
       {/* Manual entry form */}
@@ -196,6 +238,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
               txHash: r.txHash,
               comment: r.comment,
               status: r.status,
+              isMatched: r.isMatched,
             }))}
             legs={legs.map((l) => ({
               id: l.id,

@@ -92,7 +92,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     [{ txCount }],
     [{ walletCount }],
     [{ clientCount }],
-    [{ unmatchedCount }],
+    [{ reviewCount }],
     [{ mtdExchangeCount }],
     mtdNetFlowRows,
     allTimeNetFlowRows,
@@ -109,13 +109,28 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     db.select({ clientCount: sql<number>`count(*)::int` })
       .from(clients).where(eq(clients.organizationId, orgId)),
 
-    db.select({ unmatchedCount: sql<number>`count(*)::int` })
-      .from(transactions)
-      .where(and(
-        eq(transactions.organizationId, orgId),
-        eq(transactions.isMatched, false),
-        isNull(transactions.deletedAt),
-      )),
+    // "Under review" = blockchain-imported Trade with no user-set type, no
+    // status, no client assignment. Same logic as the REVIEW badge in the
+    // transactions table (kept in sync with TransactionTable.tsx).
+    db.execute(sql`
+      SELECT count(*)::int AS "reviewCount"
+      FROM transactions t
+      WHERE t.organization_id = ${orgId}
+        AND t.deleted_at IS NULL
+        AND t.type = 'Trade'
+        AND t.status IS NULL
+        AND (
+          t.transaction_type IS NULL
+          OR t.transaction_type NOT IN (
+            SELECT name FROM org_transaction_types
+            WHERE organization_id = ${orgId}
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM transaction_clients tc
+          WHERE tc.transaction_id = t.id
+        )
+    `) as unknown as Promise<Array<{ reviewCount: number }>>,
 
     db.select({ mtdExchangeCount: sql<number>`count(*)::int` })
       .from(transactions)
@@ -333,27 +348,31 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* ── Unmatched alert (mobile only — desktop uses KPI card below) ─────── */}
-      {unmatchedCount > 0 && (
-        <Link href="/app/transactions"
+      {/* ── Under-review alert (mobile only — desktop uses KPI card below) ─── */}
+      {reviewCount > 0 && (
+        <Link href="/app/transactions?review=1"
           className="sm:hidden rounded-xl flex items-center gap-3 px-4 py-3 active:opacity-70 transition-opacity"
           style={{
-            backgroundColor: "color-mix(in srgb, var(--red) 8%, var(--surface))",
-            border: "1px solid color-mix(in srgb, var(--red) 30%, var(--border))",
+            backgroundColor: "color-mix(in srgb, var(--amber) 9%, var(--surface))",
+            border: "1px solid color-mix(in srgb, var(--amber) 32%, var(--border))",
           }}>
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-            style={{ backgroundColor: "color-mix(in srgb, var(--red) 18%, transparent)" }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
-              strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--red)" }}>
-              <path d="M12 9v4M12 17h.01" />
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+            style={{ backgroundColor: "color-mix(in srgb, var(--amber) 18%, transparent)" }}>
+            {/* Pulsing dot to mirror the REVIEW badge in the table */}
+            <span className="absolute inline-flex h-2 w-2 rounded-full opacity-75 animate-ping"
+              style={{ backgroundColor: "var(--amber)", top: 6, right: 6 }} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--amber)" }}>
+              <path d="M11 4a8 8 0 1 1-8 8" />
+              <path d="M3 4v5h5" />
+              <path d="M12 8v4l3 2" />
             </svg>
           </span>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium" style={{ color: "var(--text-1)" }}>
-              {unmatchedCount.toLocaleString()} unmatched transaction{unmatchedCount === 1 ? "" : "s"}
+              {reviewCount.toLocaleString()} transaction{reviewCount === 1 ? "" : "s"} under review
             </p>
-            <p className="text-xs" style={{ color: "var(--text-3)" }}>Need to be reviewed and tagged</p>
+            <p className="text-xs" style={{ color: "var(--text-3)" }}>Tap to add type, status, or client</p>
           </div>
           <span className="text-xs shrink-0" style={{ color: "var(--text-4)" }}>→</span>
         </Link>
@@ -494,19 +513,30 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           </p>
           <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>addresses · counterparties</p>
         </div>
-        <Link href="/app/transactions" className="rounded-xl p-4 transition-all hover:translate-y-[-1px]"
+        <Link href={reviewCount > 0 ? "/app/transactions?review=1" : "/app/transactions"}
+          className="rounded-xl p-4 transition-all hover:translate-y-[-1px]"
           style={{
             backgroundColor: "var(--surface)",
             border: "1px solid var(--border)",
-            borderTop: `2px solid ${unmatchedCount > 0 ? "var(--red)" : "var(--text-3)"}`,
+            borderTop: `2px solid ${reviewCount > 0 ? "var(--amber)" : "var(--text-3)"}`,
           }}>
-          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Unmatched Txs</p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Under Review</p>
+            {reviewCount > 0 && (
+              <span className="relative inline-flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping"
+                  style={{ backgroundColor: "var(--amber)" }} />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5"
+                  style={{ backgroundColor: "var(--amber)" }} />
+              </span>
+            )}
+          </div>
           <p className="mt-2.5 font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium leading-none"
-            style={{ color: unmatchedCount > 0 ? "var(--red)" : "var(--text-2)" }}>
-            {unmatchedCount.toLocaleString()}
+            style={{ color: reviewCount > 0 ? "var(--amber)" : "var(--text-2)" }}>
+            {reviewCount.toLocaleString()}
           </p>
           <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-            {unmatchedCount === 0 ? "all matched ✓" : "need attention"}
+            {reviewCount === 0 ? "all reviewed ✓" : "needs attention"}
           </p>
         </Link>
       </div>
