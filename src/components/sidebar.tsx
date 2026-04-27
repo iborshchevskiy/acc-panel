@@ -227,11 +227,16 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
     ...extra,
   });
 
-  // Mobile bottom tab bar — top 4 most-used + "More" sheet for the rest
-  const PRIMARY_TABS = NAV_ITEMS.slice(0, 4); // Dashboard, Transactions, Wallets, Clients
-  const SECONDARY_TABS = NAV_ITEMS.slice(4);  // Expenses, Analytics, FIFO, Debts, Capital, Data
+  // Mobile bottom tab bar — Dashboard, Transactions, [Lock], Wallets, More
+  // Clients now lives in the More sheet.
+  const NAV_BY_HREF = Object.fromEntries(NAV_ITEMS.map(i => [i.href, i]));
+  const LEFT_TABS = [NAV_BY_HREF["/app/dashboard"], NAV_BY_HREF["/app/transactions"]];
+  const RIGHT_TABS = [NAV_BY_HREF["/app/wallets"]];
+  const SECONDARY_TABS = NAV_ITEMS.filter(item =>
+    !["/app/dashboard", "/app/transactions", "/app/wallets"].includes(item.href)
+  ); // Clients, Expenses, Analytics, FIFO, Debts, Capital, Data
   const moreActive = SECONDARY_TABS.some(item =>
-    pathname === item.href || (item.href !== "/app/dashboard" && pathname.startsWith(item.href))
+    pathname === item.href || pathname.startsWith(item.href)
   ) || pathname.startsWith("/app/settings");
 
   return (
@@ -245,7 +250,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      {PRIMARY_TABS.map(item => {
+      {LEFT_TABS.map(item => {
         const isActive = pathname === item.href ||
           (item.href !== "/app/dashboard" && pathname.startsWith(item.href));
         return (
@@ -260,6 +265,76 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
           </Link>
         );
       })}
+
+      {/* ── Center: panic-lock button ───────────────────────────────── */}
+      {hasPin ? (
+        <button
+          type="button"
+          onClick={lock}
+          aria-label="Lock app"
+          title="Lock app (matrix password)"
+          className="flex-1 flex flex-col items-center justify-center gap-1 py-1 active:opacity-70"
+        >
+          <span
+            className="flex items-center justify-center rounded-full"
+            style={{
+              width: 44, height: 44,
+              backgroundColor: "var(--accent)",
+              color: "var(--surface)",
+              boxShadow: "0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent), inset 0 1px 0 rgba(255,255,255,0.15)",
+              marginTop: -14,
+              border: "3px solid var(--bg)",
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="4" y="11" width="16" height="10" rx="2" />
+              <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+            </svg>
+          </span>
+          <span className="text-[10px] leading-none font-medium" style={{ color: "var(--text-3)" }}>Lock</span>
+        </button>
+      ) : (
+        <Link
+          href="/app/settings?tab=security"
+          aria-label="Set up matrix password"
+          title="Set up matrix password"
+          className="flex-1 flex flex-col items-center justify-center gap-1 py-1 active:opacity-70"
+        >
+          <span
+            className="flex items-center justify-center rounded-full"
+            style={{
+              width: 44, height: 44,
+              backgroundColor: "var(--surface)",
+              color: "var(--text-3)",
+              border: "1px dashed var(--inner-border)",
+              marginTop: -14,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="4" y="11" width="16" height="10" rx="2" />
+              <path d="M8 11V7a4 4 0 0 1 8 0" />
+            </svg>
+          </span>
+          <span className="text-[10px] leading-none font-medium" style={{ color: "var(--text-4)" }}>Set up</span>
+        </Link>
+      )}
+
+      {RIGHT_TABS.map(item => {
+        const isActive = pathname === item.href ||
+          (item.href !== "/app/dashboard" && pathname.startsWith(item.href));
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex-1 flex flex-col items-center justify-center gap-1 py-2 active:opacity-60"
+            style={{ color: isActive ? "var(--accent)" : "var(--text-3)" }}
+          >
+            <span style={{ color: isActive ? "var(--accent)" : "var(--text-3)" }}>{item.icon}</span>
+            <span className="text-[10px] leading-none font-medium">{item.label}</span>
+          </Link>
+        );
+      })}
+
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
