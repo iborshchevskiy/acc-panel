@@ -7,6 +7,7 @@ import ScrollReveal   from "./(landing)/ScrollReveal";
 import CryptoLogo     from "./(landing)/CryptoLogo";
 import ChainRail      from "./(landing)/ChainRail";
 import ExportChips    from "./(landing)/ExportChips";
+import HeroCarousel   from "./(landing)/HeroCarousel";
 
 const syne = Syne({ subsets: ["latin"], variable: "--font-syne", weight: ["600","700","800"] });
 
@@ -18,16 +19,7 @@ export const metadata = {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-interface TickerEntry { sym: string; price: string; chg: string; dir: "up" | "down" }
-
-const TICKER_FALLBACK: TickerEntry[] = [
-  { sym: "BTC/USDT", price: "—", chg: "—", dir: "up" },
-  { sym: "ETH/USDT", price: "—", chg: "—", dir: "up" },
-  { sym: "SOL/USDT", price: "—", chg: "—", dir: "up" },
-  { sym: "TRX/USDT", price: "—", chg: "—", dir: "up" },
-  { sym: "BNB/USDT", price: "—", chg: "—", dir: "up" },
-  { sym: "XRP/USDT", price: "—", chg: "—", dir: "up" },
-];
+interface TickerEntry { sym: string; price: string; chg: string; dir: "up" | "down"; cgId: string }
 
 const COIN_IDS = [
   ["bitcoin",      "BTC"],
@@ -41,6 +33,10 @@ const COIN_IDS = [
   ["avalanche-2",  "AVAX"],
   ["polkadot",     "DOT"],
 ] as const;
+
+const TICKER_FALLBACK: TickerEntry[] = COIN_IDS.map(([id, sym]) => ({
+  sym: `${sym}/USDT`, price: "—", chg: "—", dir: "up" as const, cgId: id,
+}));
 
 function fmtPrice(p: number): string {
   if (p >= 1000) return p.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -60,7 +56,9 @@ async function fetchTicker(): Promise<TickerEntry[]> {
     const data = await res.json() as Record<string, { usd: number; usd_24h_change?: number }>;
     return COIN_IDS.map(([id, sym]) => {
       const row = data[id];
-      if (!row || typeof row.usd !== "number") return { sym: `${sym}/USDT`, price: "—", chg: "—", dir: "up" as const };
+      if (!row || typeof row.usd !== "number") {
+        return { sym: `${sym}/USDT`, price: "—", chg: "—", dir: "up" as const, cgId: id };
+      }
       const chg = typeof row.usd_24h_change === "number" ? row.usd_24h_change : 0;
       const sign = chg >= 0 ? "+" : "−";
       return {
@@ -68,6 +66,7 @@ async function fetchTicker(): Promise<TickerEntry[]> {
         price: fmtPrice(row.usd),
         chg:   `${sign}${Math.abs(chg).toFixed(2)}%`,
         dir:   chg >= 0 ? ("up" as const) : ("down" as const),
+        cgId:  id,
       };
     });
   } catch {
@@ -281,9 +280,16 @@ export default async function LandingPage() {
               </div>
             </div>
 
-            {/* ─── Right column: live ledger panel ─────────────────────── */}
+            {/* ─── Right column: live carousel of app sections ─────────── */}
             <div className="lg:col-span-5 animate-fadeup delay-300 hidden lg:flex justify-end">
-              <HeroLedger />
+              <HeroCarousel
+                panels={[
+                  { id: "dashboard",    name: "Dashboard",    hint: "open dashboard",    node: <PanelDashboard /> },
+                  { id: "transactions", name: "Transactions", hint: "list transactions", node: <PanelTransactions /> },
+                  { id: "wallets",      name: "Wallets",      hint: "list wallets",      node: <PanelWallets /> },
+                  { id: "clients",      name: "Clients",      hint: "list clients",      node: <PanelClients /> },
+                ]}
+              />
             </div>
           </div>
         </div>
@@ -314,7 +320,15 @@ export default async function LandingPage() {
               {ticker.map((t) => {
                 const baseSym = t.sym.split("/")[0];
                 return (
-                  <div key={`${dup}-${t.sym}`} className="flex items-center gap-2 shrink-0">
+                  <a
+                    key={`${dup}-${t.sym}`}
+                    href={`https://www.coingecko.com/en/coins/${t.cgId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 shrink-0 transition-opacity hover:opacity-100 focus:opacity-100"
+                    style={{ opacity: 0.92 }}
+                    title={`${t.sym} on CoinGecko`}
+                  >
                     <CryptoLogo symbol={baseSym} size={18} />
                     <span className="text-[11px] font-mono font-semibold tracking-wider"
                       style={{ color: "var(--text-2)" }}>
@@ -327,12 +341,28 @@ export default async function LandingPage() {
                       style={{ color: t.dir === "up" ? "var(--accent)" : "var(--red)" }}>
                       {t.chg}
                     </span>
-                  </div>
+                  </a>
                 );
               })}
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Source caption — quiet, not in your face */}
+      <div className="flex items-center justify-center gap-1.5 py-1.5"
+        style={{ borderBottom: "1px solid var(--border)", backgroundColor: "var(--bg)" }}>
+        <span className="text-[9px] font-mono tracking-[0.16em] uppercase" style={{ color: "var(--text-3)" }}>
+          rates · USD via
+        </span>
+        <a href="https://www.coingecko.com" target="_blank" rel="noopener noreferrer"
+          className="text-[9px] font-mono tracking-[0.16em] uppercase transition-opacity hover:opacity-100"
+          style={{ color: "var(--text-2)", opacity: 0.8 }}>
+          coingecko ↗
+        </a>
+        <span className="text-[9px] font-mono tracking-[0.16em] uppercase" style={{ color: "var(--text-3)" }}>
+          · refreshed every 15 min
+        </span>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────────────
@@ -654,100 +684,207 @@ function BentoBody({ children, compact }: { children: React.ReactNode; compact?:
   );
 }
 
-// ── visual elements ─────────────────────────────────────────────────────────
+// ── carousel panels (server-rendered, plugged into HeroCarousel) ────────────
 
-function HeroLedger() {
-  const rows = [
-    { date: "12 Apr · 14:22", chain: "TRX",  type: "Exchange", amt: "+1,250.00", ccy: "USDT", dir: "in"  },
-    { date: "12 Apr · 13:51", chain: "ETH",  type: "Exchange", amt: "+  842.00", ccy: "USDT", dir: "in"  },
-    { date: "12 Apr · 11:08", chain: "BNB",  type: "Transfer", amt: "−2,000.00", ccy: "BNB",  dir: "out" },
-    { date: "11 Apr · 22:34", chain: "SOL",  type: "Exchange", amt: "+  567.50", ccy: "USDT", dir: "in"  },
-    { date: "11 Apr · 18:02", chain: "TRX",  type: "Fee",      amt: "−    3.50", ccy: "TRX",  dir: "out" },
+function PanelDashboard() {
+  const positions = [
+    { c: "USDT", v: "+12,840", up: true  },
+    { c: "EUR",  v: "+ 4,218", up: true  },
+    { c: "CZK",  v: "+71,354", up: true  },
+    { c: "TRX",  v: "−   850", up: false },
   ];
-
+  const recent = [
+    { t: "Exchange", a: "+842",  c: "USDT", up: true },
+    { t: "Transfer", a: "−2,000", c: "BNB",  up: false },
+    { t: "Exchange", a: "+567",  c: "USDT", up: true },
+  ];
   return (
-    <div className="relative w-full max-w-[460px]">
-      {/* Outer glow */}
-      <div aria-hidden className="absolute -inset-4 rounded-3xl pointer-events-none"
-        style={{
-          background: "radial-gradient(ellipse 80% 60% at 50% 50%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%)",
-          filter: "blur(20px)",
-        }} />
-
-      <div className="relative rounded-2xl overflow-hidden"
-        style={{
-          backgroundColor: "var(--surface)",
-          border: "1px solid color-mix(in srgb, var(--accent) 20%, var(--border))",
-          boxShadow: "0 32px 80px -20px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)",
-        }}>
-        {/* Title bar */}
-        <div className="flex items-center justify-between px-4 py-2.5"
-          style={{ backgroundColor: "var(--raised)", borderBottom: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#ef4444" }} />
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
-          </div>
-          <span className="text-[10px] font-mono tracking-wider" style={{ color: "var(--text-3)" }}>
-            ledger.live
-          </span>
-          <span className="text-[10px] font-mono" style={{ color: "var(--accent)" }}>
-            ●REC
-          </span>
+    <div className="flex flex-col gap-3 h-full">
+      {/* Hero P&L */}
+      <div className="rounded-lg px-3.5 py-3" style={{ backgroundColor: "color-mix(in srgb, var(--accent) 6%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 18%, transparent)" }}>
+        <span className="text-[9px] font-mono tracking-[0.18em] uppercase" style={{ color: "var(--text-3)" }}>Net P&amp;L · MTD</span>
+        <div className="mt-1 flex items-baseline gap-2">
+          <span className="font-[family-name:var(--font-ibm-plex-mono)] text-3xl font-medium leading-none tabular-nums"
+            style={{ color: "var(--accent)" }}>+71,354</span>
+          <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>CZK</span>
         </div>
+      </div>
 
-        {/* Column headings */}
-        <div className="grid grid-cols-[auto_auto_1fr_auto] gap-3 px-4 py-2"
-          style={{ borderBottom: "1px solid var(--border)" }}>
-          {["TIME","CHAIN","TYPE","AMOUNT"].map(h => (
-            <span key={h} className="text-[9px] font-mono font-medium tracking-[0.16em]"
-              style={{ color: "var(--text-3)" }}>{h}</span>
+      {/* Net positions chips */}
+      <div>
+        <span className="text-[9px] font-mono tracking-[0.18em] uppercase" style={{ color: "var(--text-3)" }}>Net positions</span>
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+          {positions.map(p => (
+            <div key={p.c} className="flex items-center justify-between px-2.5 py-1.5 rounded"
+              style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)" }}>
+              <span className="text-[10px] font-medium" style={{ color: "var(--text-2)" }}>{p.c}</span>
+              <span className="text-[11px] font-mono font-semibold tabular-nums"
+                style={{ color: p.up ? "var(--accent)" : "var(--red)" }}>{p.v}</span>
+            </div>
           ))}
         </div>
+      </div>
 
-        {/* Rows */}
-        <div className="px-4 py-2">
-          {rows.map((row, i) => (
-            <div key={i}
-              className="grid grid-cols-[auto_auto_1fr_auto] gap-3 items-center py-2.5"
-              style={{
-                borderBottom: i < rows.length - 1 ? "1px solid color-mix(in srgb, var(--border) 60%, transparent)" : "none",
-                animation: `ledger-cycle 12s ease-in-out ${i * 1.4}s infinite`,
-              }}>
-              <span className="text-[10px] font-mono" style={{ color: "var(--text-3)" }}>{row.date}</span>
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
-                style={{ color: "var(--text-2)", backgroundColor: "var(--raised)" }}>
-                {row.chain}
-              </span>
-              <span className="text-[11px]" style={{ color: "var(--text-2)" }}>{row.type}</span>
-              <span className="text-[11px] font-mono whitespace-nowrap tabular-nums"
-                style={{ color: row.dir === "in" ? "var(--accent)" : "var(--red)" }}>
-                {row.amt} <span style={{ opacity: 0.65 }}>{row.ccy}</span>
+      {/* Recent activity */}
+      <div className="flex-1">
+        <span className="text-[9px] font-mono tracking-[0.18em] uppercase" style={{ color: "var(--text-3)" }}>Recent activity</span>
+        <div className="mt-1.5 flex flex-col">
+          {recent.map((r, i) => (
+            <div key={i} className="flex items-center justify-between py-1.5"
+              style={{ borderBottom: i < recent.length - 1 ? "1px solid color-mix(in srgb, var(--border) 50%, transparent)" : "none" }}>
+              <span className="text-[10px]" style={{ color: "var(--text-2)" }}>{r.t}</span>
+              <span className="text-[10px] font-mono tabular-nums"
+                style={{ color: r.up ? "var(--accent)" : "var(--red)" }}>
+                {r.a} <span style={{ opacity: 0.6 }}>{r.c}</span>
               </span>
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* Net */}
-        <div className="px-4 py-3 flex items-center justify-between"
-          style={{
-            borderTop: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)",
-          }}>
-          <span className="text-[9px] font-mono tracking-[0.18em]" style={{ color: "var(--text-3)" }}>
-            NET · 24H
-          </span>
-          <span className="text-sm font-mono font-semibold tabular-nums" style={{ color: "var(--accent)" }}>
-            +3,046.00 USDT
-          </span>
-        </div>
+function PanelTransactions() {
+  const rows = [
+    { t: "14:22", chain: "TRX",  type: "Exchange", amt: "+1,250.00", ccy: "USDT", dir: "in"  },
+    { t: "13:51", chain: "ETH",  type: "Exchange", amt: "+  842.00", ccy: "USDT", dir: "in"  },
+    { t: "11:08", chain: "BNB",  type: "Transfer", amt: "−2,000.00", ccy: "BNB",  dir: "out" },
+    { t: "10:41", chain: "SOL",  type: "Exchange", amt: "+  567.50", ccy: "USDT", dir: "in"  },
+    { t: "09:02", chain: "TRX",  type: "Fee",      amt: "−    3.50", ccy: "TRX",  dir: "out" },
+  ];
+  return (
+    <div className="flex flex-col gap-3 h-full">
+      {/* Filter pills */}
+      <div className="flex gap-1.5">
+        {["All", "Exchange", "Transfer", "Fee"].map((f, i) => (
+          <span key={f} className="text-[10px] font-medium px-2.5 py-1 rounded-full"
+            style={{
+              backgroundColor: i === 0 ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "var(--raised)",
+              border: i === 0 ? "1px solid color-mix(in srgb, var(--accent) 35%, transparent)" : "1px solid var(--border)",
+              color: i === 0 ? "var(--accent)" : "var(--text-3)",
+            }}>{f}</span>
+        ))}
       </div>
 
-      {/* Cursor */}
-      <div className="absolute -bottom-7 left-2 flex items-center gap-1">
-        <span className="text-[11px] font-mono" style={{ color: "var(--accent)", opacity: 0.55 }}>$ accpanel sync</span>
-        <span className="w-1.5 h-3.5 inline-block ml-0.5"
-          style={{ backgroundColor: "var(--accent)", animation: "cursor-blink 1.1s step-end infinite" }} />
+      {/* Header */}
+      <div className="grid grid-cols-[auto_auto_1fr_auto] gap-3 pb-1.5"
+        style={{ borderBottom: "1px solid var(--border)" }}>
+        {["TIME","CHAIN","TYPE","AMOUNT"].map(h => (
+          <span key={h} className="text-[9px] font-mono font-medium tracking-[0.16em]"
+            style={{ color: "var(--text-3)" }}>{h}</span>
+        ))}
+      </div>
+
+      {/* Rows */}
+      <div className="flex-1 flex flex-col">
+        {rows.map((row, i) => (
+          <div key={i}
+            className="grid grid-cols-[auto_auto_1fr_auto] gap-3 items-center py-2"
+            style={{
+              borderBottom: i < rows.length - 1 ? "1px solid color-mix(in srgb, var(--border) 50%, transparent)" : "none",
+              animation: `ledger-cycle 9.5s ease-in-out ${i * 1.1}s infinite`,
+            }}>
+            <span className="text-[10px] font-mono" style={{ color: "var(--text-3)" }}>{row.t}</span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+              style={{ color: "var(--text-2)", backgroundColor: "var(--raised)" }}>{row.chain}</span>
+            <span className="text-[11px]" style={{ color: "var(--text-2)" }}>{row.type}</span>
+            <span className="text-[11px] font-mono whitespace-nowrap tabular-nums"
+              style={{ color: row.dir === "in" ? "var(--accent)" : "var(--red)" }}>
+              {row.amt} <span style={{ opacity: 0.65 }}>{row.ccy}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PanelWallets() {
+  const wallets = [
+    { sym: "TRX", chain: "TRON",     addr: "TQDC8…h4Wn3", bal: "182,440 USDT", sync: "2 min ago", auto: true  },
+    { sym: "ETH", chain: "Ethereum", addr: "0xA1b2…F7e8", bal:  "12.840 ETH",  sync: "5 min ago", auto: true  },
+    { sym: "SOL", chain: "Solana",   addr: "3kpQ…g8Vt",   bal: "1,420 USDC",   sync: "12 min ago", auto: false },
+    { sym: "BNB", chain: "BNB",      addr: "0xB9c4…L0d2", bal:  "0.842 BNB",   sync: "1 hour ago", auto: true  },
+  ];
+  return (
+    <div className="flex flex-col gap-2 h-full">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[9px] font-mono tracking-[0.18em] uppercase" style={{ color: "var(--text-3)" }}>4 wallets · all synced</span>
+        <span className="text-[10px] font-mono" style={{ color: "var(--accent)" }}>+ Add</span>
+      </div>
+      <div className="flex flex-col gap-1.5 flex-1">
+        {wallets.map((w, i) => (
+          <div key={i} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg"
+            style={{
+              backgroundColor: "var(--raised)",
+              border: "1px solid var(--border)",
+              animation: `ledger-cycle 11s ease-in-out ${i * 1.3}s infinite`,
+            }}>
+            <CryptoLogo symbol={w.sym} size={22} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium truncate" style={{ color: "var(--text-1)" }}>{w.chain}</span>
+                <span className="text-[9px] font-mono truncate" style={{ color: "var(--text-3)" }}>{w.addr}</span>
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-[10px] font-mono tabular-nums" style={{ color: "var(--text-2)" }}>{w.bal}</span>
+                <span className="text-[9px] font-mono" style={{ color: "var(--text-3)" }}>· {w.sync}</span>
+              </div>
+            </div>
+            {w.auto && (
+              <span className="shrink-0 inline-flex items-center gap-1 text-[8px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded"
+                style={{ backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)", color: "var(--accent)" }}>
+                <span className="w-1 h-1 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
+                auto
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PanelClients() {
+  const clients = [
+    { initial: "M", name: "Marko D.",      tg: "@markodrk",   debt: "0",       up: true,  txs: 42 },
+    { initial: "A", name: "Anna Pet…",     tg: "@anpet22",    debt: "+1,200",  up: true,  txs: 18 },
+    { initial: "K", name: "Karel N.",      tg: "@knovak",     debt: "−820",    up: false, txs: 31 },
+    { initial: "J", name: "Jana M.",       tg: "@janamil",    debt: "+450",    up: true,  txs: 7  },
+    { initial: "P", name: "Petr H.",       tg: "@phrad",      debt: "0",       up: true,  txs: 12 },
+  ];
+  return (
+    <div className="flex flex-col gap-2 h-full">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[9px] font-mono tracking-[0.18em] uppercase" style={{ color: "var(--text-3)" }}>5 of 36 clients</span>
+        <span className="text-[10px] font-mono" style={{ color: "var(--accent)" }}>+ New</span>
+      </div>
+      <div className="flex flex-col flex-1">
+        {clients.map((c, i) => (
+          <div key={i} className="flex items-center gap-2.5 py-2"
+            style={{
+              borderBottom: i < clients.length - 1 ? "1px solid color-mix(in srgb, var(--border) 50%, transparent)" : "none",
+              animation: `ledger-cycle 12s ease-in-out ${i * 1.0}s infinite`,
+            }}>
+            {/* avatar */}
+            <span className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold"
+              style={{ backgroundColor: "var(--raised-hi)", color: "var(--text-2)", border: "1px solid var(--border)" }}>
+              {c.initial}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium truncate" style={{ color: "var(--text-1)" }}>{c.name}</span>
+                <span className="text-[9px] font-mono truncate" style={{ color: "var(--text-3)" }}>{c.tg}</span>
+              </div>
+              <span className="text-[9px] font-mono" style={{ color: "var(--text-3)" }}>{c.txs} txs</span>
+            </div>
+            <span className="text-[11px] font-mono tabular-nums shrink-0"
+              style={{ color: c.debt === "0" ? "var(--text-3)" : c.up ? "var(--accent)" : "var(--red)" }}>
+              {c.debt} <span style={{ opacity: 0.65 }}>USDT</span>
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
