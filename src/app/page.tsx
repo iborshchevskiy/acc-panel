@@ -4,6 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import MouseSpotlight from "./(landing)/MouseSpotlight";
 import ScrollReveal   from "./(landing)/ScrollReveal";
+import CryptoLogo     from "./(landing)/CryptoLogo";
+import ChainRail      from "./(landing)/ChainRail";
+import ExportChips    from "./(landing)/ExportChips";
 
 const syne = Syne({ subsets: ["latin"], variable: "--font-syne", weight: ["600","700","800"] });
 
@@ -15,24 +18,68 @@ export const metadata = {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-const TICKER = [
-  ["USDT/EUR", "1.0238", "+0.12%", "up"],
-  ["BTC/USDT", "104,238", "+1.84%", "up"],
-  ["ETH/USDT", "3,841.20", "−0.42%", "down"],
-  ["TRX/USDT", "0.2418",  "+0.78%", "up"],
-  ["SOL/USDT", "182.66",  "+2.31%", "up"],
-  ["USDT/CZK", "23.842",  "+0.04%", "up"],
-  ["BNB/USDT", "612.40",  "−0.18%", "down"],
-  ["USDC/EUR", "0.9215",  "+0.06%", "up"],
-  ["XRP/USDT", "2.4810",  "+3.12%", "up"],
-  ["DOGE/USDT","0.3892",  "−1.04%", "down"],
+interface TickerEntry { sym: string; price: string; chg: string; dir: "up" | "down" }
+
+const TICKER_FALLBACK: TickerEntry[] = [
+  { sym: "BTC/USDT", price: "—", chg: "—", dir: "up" },
+  { sym: "ETH/USDT", price: "—", chg: "—", dir: "up" },
+  { sym: "SOL/USDT", price: "—", chg: "—", dir: "up" },
+  { sym: "TRX/USDT", price: "—", chg: "—", dir: "up" },
+  { sym: "BNB/USDT", price: "—", chg: "—", dir: "up" },
+  { sym: "XRP/USDT", price: "—", chg: "—", dir: "up" },
+];
+
+const COIN_IDS = [
+  ["bitcoin",      "BTC"],
+  ["ethereum",     "ETH"],
+  ["solana",       "SOL"],
+  ["binancecoin",  "BNB"],
+  ["ripple",       "XRP"],
+  ["tron",         "TRX"],
+  ["dogecoin",     "DOGE"],
+  ["cardano",      "ADA"],
+  ["avalanche-2",  "AVAX"],
+  ["polkadot",     "DOT"],
 ] as const;
 
+function fmtPrice(p: number): string {
+  if (p >= 1000) return p.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (p >= 1)    return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (p >= 0.01) return p.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  return p.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 });
+}
+
+async function fetchTicker(): Promise<TickerEntry[]> {
+  try {
+    const ids = COIN_IDS.map(([id]) => id).join(",");
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`;
+    // Next will dedup + cache this for 15 minutes (one outbound call per page,
+    // shared across all visitors during the window).
+    const res = await fetch(url, { next: { revalidate: 900 } });
+    if (!res.ok) return TICKER_FALLBACK;
+    const data = await res.json() as Record<string, { usd: number; usd_24h_change?: number }>;
+    return COIN_IDS.map(([id, sym]) => {
+      const row = data[id];
+      if (!row || typeof row.usd !== "number") return { sym: `${sym}/USDT`, price: "—", chg: "—", dir: "up" as const };
+      const chg = typeof row.usd_24h_change === "number" ? row.usd_24h_change : 0;
+      const sign = chg >= 0 ? "+" : "−";
+      return {
+        sym:   `${sym}/USDT`,
+        price: fmtPrice(row.usd),
+        chg:   `${sign}${Math.abs(chg).toFixed(2)}%`,
+        dir:   chg >= 0 ? ("up" as const) : ("down" as const),
+      };
+    });
+  } catch {
+    return TICKER_FALLBACK;
+  }
+}
+
 const CHAINS = [
-  { code: "TRX", name: "TRON",     color: "var(--red)" },
-  { code: "ETH", name: "Ethereum", color: "var(--indigo)" },
-  { code: "BNB", name: "BNB",      color: "var(--amber)" },
-  { code: "SOL", name: "Solana",   color: "var(--accent)" },
+  { code: "TRX", name: "TRON",     color: "#EF0027" },
+  { code: "ETH", name: "Ethereum", color: "#627EEA" },
+  { code: "BNB", name: "BNB",      color: "#F3BA2F" },
+  { code: "SOL", name: "Solana",   color: "#9945FF" },
 ] as const;
 
 // ── page ────────────────────────────────────────────────────────────────────
@@ -43,6 +90,9 @@ export default async function LandingPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) redirect("/app/dashboard");
   } catch { /* env not configured — render landing */ }
+
+  // Real prices, cached for 15 minutes via Next fetch revalidation.
+  const ticker = await fetchTicker();
 
   return (
     <div className={syne.variable}
@@ -225,23 +275,9 @@ export default async function LandingPage() {
                 </Link>
               </div>
 
-              {/* Chain rail */}
-              <div className="animate-fadeup delay-400 flex items-center gap-x-5 gap-y-2 flex-wrap mt-10 pt-8"
-                style={{ borderTop: "1px solid var(--border)" }}>
-                <span className="text-[9px] font-mono uppercase tracking-[0.18em]" style={{ color: "var(--text-3)" }}>
-                  Native chains
-                </span>
-                {CHAINS.map((c) => (
-                  <div key={c.code} className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{
-                      backgroundColor: c.color,
-                      boxShadow: `0 0 6px ${c.color}`,
-                      animation: "glow-breathe 3s ease-in-out infinite",
-                    }} />
-                    <span className="text-[11px] font-medium" style={{ color: "var(--text-2)" }}>{c.name}</span>
-                    <span className="text-[10px] font-mono" style={{ color: "var(--text-3)" }}>{c.code}</span>
-                  </div>
-                ))}
+              {/* Chain rail (interactive, hover/tap-to-highlight) */}
+              <div className="animate-fadeup delay-400 mt-10">
+                <ChainRail />
               </div>
             </div>
 
@@ -272,24 +308,28 @@ export default async function LandingPage() {
         <div aria-hidden className="absolute right-0 top-0 bottom-0 w-24 z-10 pointer-events-none"
           style={{ background: "linear-gradient(to left, var(--surface), transparent)" }} />
 
-        <div className="flex gap-10 whitespace-nowrap" style={{ animation: "ticker 50s linear infinite" }}>
+        <div className="flex gap-8 whitespace-nowrap" style={{ animation: "ticker 28s linear infinite" }}>
           {[...Array(2)].map((_v, dup) => (
-            <div key={dup} className="flex gap-10 shrink-0">
-              {TICKER.map(([sym, price, chg, dir]) => (
-                <div key={`${dup}-${sym}`} className="flex items-baseline gap-2 shrink-0">
-                  <span className="text-[10px] font-mono font-semibold tracking-wider"
-                    style={{ color: "var(--text-2)" }}>
-                    {sym}
-                  </span>
-                  <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--text-1)" }}>
-                    {price}
-                  </span>
-                  <span className="text-[10px] font-mono tabular-nums"
-                    style={{ color: dir === "up" ? "var(--accent)" : "var(--red)" }}>
-                    {chg}
-                  </span>
-                </div>
-              ))}
+            <div key={dup} className="flex gap-8 shrink-0">
+              {ticker.map((t) => {
+                const baseSym = t.sym.split("/")[0];
+                return (
+                  <div key={`${dup}-${t.sym}`} className="flex items-center gap-2 shrink-0">
+                    <CryptoLogo symbol={baseSym} size={18} />
+                    <span className="text-[11px] font-mono font-semibold tracking-wider"
+                      style={{ color: "var(--text-2)" }}>
+                      {t.sym}
+                    </span>
+                    <span className="text-[12px] font-mono tabular-nums" style={{ color: "var(--text-1)" }}>
+                      {t.price}
+                    </span>
+                    <span className="text-[10px] font-mono tabular-nums"
+                      style={{ color: t.dir === "up" ? "var(--accent)" : "var(--red)" }}>
+                      {t.chg}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           ))}
         </div>
@@ -710,51 +750,87 @@ function HeroLedger() {
   );
 }
 
+// Three concentric rings with different rotation speeds + directions, each
+// carrying a counter-rotating set of crypto logos so the icons stay upright.
+const ORBIT = {
+  outer: ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP"] as const,
+  mid:   ["TRX", "USDC", "AVAX", "DOGE"] as const,
+  inner: ["ADA", "MATIC"] as const,
+};
+
 function ChainOrbital() {
+  const renderRing = (
+    items: readonly string[],
+    radius: number,
+    speed: number,
+    reverse: boolean,
+    logoSize: number,
+    badgeSize: number,
+  ) => (
+    <div className="absolute inset-0" style={{
+      animation: `orbit-slow ${speed}s linear infinite${reverse ? " reverse" : ""}`,
+    }}>
+      {items.map((sym, i) => {
+        const angle = (i / items.length) * 2 * Math.PI;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        return (
+          <div key={sym}
+            className="absolute flex items-center justify-center rounded-full"
+            style={{
+              top: "50%", left: "50%",
+              width: badgeSize, height: badgeSize,
+              transform: `translate(calc(${x}px - 50%), calc(${y}px - 50%))`,
+              backgroundColor: "var(--surface)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 6px 16px -6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)",
+              // Counter-rotate so the logo stays upright as the ring spins
+              animation: `orbit-slow ${speed}s linear infinite${reverse ? "" : " reverse"}`,
+            }}>
+            <CryptoLogo symbol={sym} size={logoSize} />
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
-    <div aria-hidden className="absolute right-[-50px] bottom-[-50px] w-[300px] h-[300px] pointer-events-none">
-      {/* Concentric rings */}
-      <div className="absolute inset-0" style={{ animation: "orbit-slow 80s linear infinite" }}>
-        {[100, 70, 40].map((pct, i) => (
+    <div aria-hidden className="absolute right-[-60px] bottom-[-60px] w-[340px] h-[340px] pointer-events-none">
+      {/* Decorative rings */}
+      <div className="absolute inset-0" style={{ animation: "orbit-slow 120s linear infinite" }}>
+        {[100, 70, 42].map((pct, i) => (
           <div key={i} className="absolute rounded-full"
             style={{
               top: "50%", left: "50%",
               transform: "translate(-50%, -50%)",
               width: `${pct}%`, height: `${pct}%`,
-              border: `1px dashed color-mix(in srgb, var(--accent) ${22 - i*4}%, transparent)`,
+              border: `1px dashed color-mix(in srgb, var(--accent) ${22 - i*5}%, transparent)`,
             }} />
         ))}
       </div>
-      {/* Chain badges around the largest ring */}
-      <div className="absolute inset-0" style={{ animation: "orbit-slow 60s linear infinite" }}>
-        {CHAINS.map((c, i) => {
-          const angle = (i / CHAINS.length) * 2 * Math.PI - Math.PI / 4;
-          const r = 110;
-          return (
-            <div key={c.code}
-              className="absolute flex items-center justify-center rounded-full font-[family-name:var(--font-syne)] text-[11px] font-bold"
-              style={{
-                top: "50%", left: "50%",
-                transform: `translate(calc(${Math.cos(angle) * r}px - 50%), calc(${Math.sin(angle) * r}px - 50%))`,
-                width: 36, height: 36,
-                backgroundColor: "var(--surface)",
-                border: `1px solid ${c.color}`,
-                color: c.color,
-                boxShadow: `0 0 14px color-mix(in srgb, ${c.color} 35%, transparent)`,
-              }}>
-              {c.code}
-            </div>
-          );
-        })}
-      </div>
-      {/* Center node */}
+
+      {/* Three orbital rings — alternating direction, descending size + speed */}
+      {renderRing(ORBIT.outer, 145, 60,  false, 22, 36)}
+      {renderRing(ORBIT.mid,   100, 42,  true,  18, 30)}
+      {renderRing(ORBIT.inner,  60,  28, false, 16, 26)}
+
+      {/* Center node — brand mark with breathing glow */}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold"
-          style={{
-            backgroundColor: "var(--accent)",
-            color: "#0d1117",
-            boxShadow: "0 0 24px color-mix(in srgb, var(--accent) 55%, transparent)",
-          }}>₿</div>
+        <div className="relative">
+          <div className="absolute inset-0 rounded-full"
+            style={{
+              backgroundColor: "var(--accent)",
+              filter: "blur(14px)",
+              opacity: 0.45,
+              animation: "glow-breathe 3.5s ease-in-out infinite",
+            }} />
+          <div className="relative w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold"
+            style={{
+              backgroundColor: "var(--accent)",
+              color: "#0d1117",
+              boxShadow: "0 0 24px color-mix(in srgb, var(--accent) 55%, transparent)",
+            }}>₿</div>
+        </div>
       </div>
     </div>
   );
@@ -862,24 +938,6 @@ function KycMini() {
           </div>
           <span className="text-[9px] font-mono" style={{ color: "var(--text-3)" }}>{k}</span>
         </div>
-      ))}
-    </div>
-  );
-}
-
-function ExportChips() {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {["CSV", "JSON", "XLSX", "PDF"].map((f, i) => (
-        <span key={f}
-          className="text-[11px] font-mono font-semibold px-3 py-2 rounded-md"
-          style={{
-            backgroundColor: i === 0 ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "var(--raised)",
-            border: i === 0 ? "1px solid color-mix(in srgb, var(--accent) 35%, transparent)" : "1px solid var(--border)",
-            color: i === 0 ? "var(--accent)" : "var(--text-3)",
-          }}>
-          {f}
-        </span>
       ))}
     </div>
   );
