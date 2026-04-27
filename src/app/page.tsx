@@ -365,15 +365,18 @@ export default async function LandingPage() {
             {/* Multi-chain — large hero card spans 2 cols on lg */}
             <BentoCard className="md:col-span-2 lg:col-span-2 reveal reveal-d1" minH={320}>
               <div className="relative h-full p-6 sm:p-8 flex flex-col">
-                <BentoLabel>01</BentoLabel>
-                <BentoTitle>Native multi-chain import</BentoTitle>
-                <BentoBody>
-                  One connector per chain — TRON, Ethereum, BNB, Solana — fetches
-                  the full transaction history, deduplicates by hash, and writes
-                  double-entry legs in one shot. Re-import any time; nothing
-                  doubles up.
-                </BentoBody>
+                {/* Ambient background — orbital sits under the text via z-index */}
                 <ChainOrbital />
+                <div className="relative z-10">
+                  <BentoLabel>01</BentoLabel>
+                  <BentoTitle>Native multi-chain import</BentoTitle>
+                  <BentoBody>
+                    One connector per chain — TRON, Ethereum, BNB, Solana — fetches
+                    the full transaction history, deduplicates by hash, and writes
+                    double-entry legs in one shot. Re-import any time; nothing
+                    doubles up.
+                  </BentoBody>
+                </div>
               </div>
             </BentoCard>
 
@@ -750,12 +753,14 @@ function HeroLedger() {
   );
 }
 
-// Three concentric rings with different rotation speeds + directions, each
-// carrying a counter-rotating set of crypto logos so the icons stay upright.
+// Ambient orbital — sits behind the text as a slow background animation.
+// All the bright "buttons" are gone; logos float as quiet marks at low
+// opacity. Three rings centered on the card, sized so the outer ring
+// bleeds off the right edge for visual rhythm.
 const ORBIT = {
-  outer: ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP"] as const,
-  mid:   ["TRX", "USDC", "AVAX", "DOGE"] as const,
-  inner: ["ADA", "MATIC"] as const,
+  outer: ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "AVAX", "DOGE"] as const,
+  mid:   ["TRX", "USDC", "ADA", "MATIC"] as const,
+  inner: ["BTC", "ETH", "SOL"] as const,
 };
 
 function ChainOrbital() {
@@ -765,7 +770,7 @@ function ChainOrbital() {
     speed: number,
     reverse: boolean,
     logoSize: number,
-    badgeSize: number,
+    opacity: number,
   ) => (
     <div className="absolute inset-0" style={{
       animation: `orbit-slow ${speed}s linear infinite${reverse ? " reverse" : ""}`,
@@ -775,15 +780,14 @@ function ChainOrbital() {
         const x = Math.cos(angle) * radius;
         const y = Math.sin(angle) * radius;
         return (
-          <div key={sym}
-            className="absolute flex items-center justify-center rounded-full"
+          <div key={`${sym}-${i}`}
+            className="absolute flex items-center justify-center"
             style={{
               top: "50%", left: "50%",
-              width: badgeSize, height: badgeSize,
+              width: logoSize, height: logoSize,
               transform: `translate(calc(${x}px - 50%), calc(${y}px - 50%))`,
-              backgroundColor: "var(--surface)",
-              border: "1px solid var(--border)",
-              boxShadow: "0 6px 16px -6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)",
+              opacity,
+              filter: "saturate(0.7)",
               // Counter-rotate so the logo stays upright as the ring spins
               animation: `orbit-slow ${speed}s linear infinite${reverse ? "" : " reverse"}`,
             }}>
@@ -795,43 +799,33 @@ function ChainOrbital() {
   );
 
   return (
-    <div aria-hidden className="absolute right-[-60px] bottom-[-60px] w-[340px] h-[340px] pointer-events-none">
-      {/* Decorative rings */}
-      <div className="absolute inset-0" style={{ animation: "orbit-slow 120s linear infinite" }}>
-        {[100, 70, 42].map((pct, i) => (
-          <div key={i} className="absolute rounded-full"
-            style={{
-              top: "50%", left: "50%",
-              transform: "translate(-50%, -50%)",
-              width: `${pct}%`, height: `${pct}%`,
-              border: `1px dashed color-mix(in srgb, var(--accent) ${22 - i*5}%, transparent)`,
-            }} />
-        ))}
-      </div>
-
-      {/* Three orbital rings — alternating direction, descending size + speed */}
-      {renderRing(ORBIT.outer, 145, 60,  false, 22, 36)}
-      {renderRing(ORBIT.mid,   100, 42,  true,  18, 30)}
-      {renderRing(ORBIT.inner,  60,  28, false, 16, 26)}
-
-      {/* Center node — brand mark with breathing glow */}
+    <div aria-hidden className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+      {/* Center the orbital on the card */}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative">
-          <div className="absolute inset-0 rounded-full"
-            style={{
-              backgroundColor: "var(--accent)",
-              filter: "blur(14px)",
-              opacity: 0.45,
-              animation: "glow-breathe 3.5s ease-in-out infinite",
-            }} />
-          <div className="relative w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold"
-            style={{
-              backgroundColor: "var(--accent)",
-              color: "#0d1117",
-              boxShadow: "0 0 24px color-mix(in srgb, var(--accent) 55%, transparent)",
-            }}>₿</div>
+        <div className="relative" style={{ width: 0, height: 0 }}>
+          {/* Decorative dashed rings */}
+          {[420, 300, 180].map((d, i) => (
+            <div key={i} className="absolute rounded-full"
+              style={{
+                top: "50%", left: "50%",
+                transform: "translate(-50%, -50%)",
+                width: d, height: d,
+                border: `1px dashed color-mix(in srgb, var(--accent) ${10 - i*2}%, transparent)`,
+              }} />
+          ))}
+
+          {/* Three orbital rings — slow, ambient, low-opacity */}
+          {renderRing(ORBIT.outer, 210, 90, false, 22, 0.30)}
+          {renderRing(ORBIT.mid,   150, 70, true,  18, 0.22)}
+          {renderRing(ORBIT.inner,  90, 50, false, 16, 0.18)}
         </div>
       </div>
+
+      {/* Subtle radial vignette so logos are quietest where text sits */}
+      <div className="absolute inset-0"
+        style={{
+          background: "radial-gradient(ellipse 55% 80% at 28% 50%, var(--surface) 0%, color-mix(in srgb, var(--surface) 70%, transparent) 35%, transparent 75%)",
+        }} />
     </div>
   );
 }
