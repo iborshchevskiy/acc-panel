@@ -2,254 +2,292 @@ import Link from "next/link";
 import { Syne } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import MouseSpotlight from "./(landing)/MouseSpotlight";
+import ScrollReveal   from "./(landing)/ScrollReveal";
 
 const syne = Syne({ subsets: ["latin"], variable: "--font-syne", weight: ["600","700","800"] });
 
 export const metadata = {
-  title: "AccPanel — P2P Crypto Trading Accounting",
-  description: "Professional double-entry accounting for P2P crypto traders. Multi-chain import, FIFO P&L, client tracking, audit-ready exports.",
+  title: "AccPanel — Accounting for the on-chain economy",
+  description:
+    "A double-entry ledger built for crypto exchange offices. Multi-chain auto-import, FIFO cost basis, KYC, audit-ready exports — all in one panel.",
 };
 
-const FEATURES = [
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path d="M3 10h14M10 3v14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/>
-      </svg>
-    ),
-    title: "Multi-chain import",
-    body: "One-click fetch from Tron (TRC-20), Ethereum, BNB Chain, and Solana. Automatic deduplication — re-import any time.",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <rect x="2.5" y="4.5" width="15" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M2.5 8.5h15" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M7 12.5h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-    title: "Double-entry ledger",
-    body: "Every transaction is stored as debit/credit legs. Income, outcome, fees — captured with full audit trail.",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path d="M4 15L8 9l3 4 3-5 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-    title: "FIFO cost basis & P&L",
-    body: "Realized gains calculated per lot using FIFO. Spread analysis by trading pair. Ready for tax reporting.",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <circle cx="8" cy="7" r="3" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M3 17c0-3 2.2-5 5-5s5 2 5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M13 9.5l1.5 1.5L17 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-    title: "Client & counterparty tracking",
-    body: "Link transactions to clients, attach wallet addresses, track outstanding debts and balances per counterparty.",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path d="M10 3v14M6 6l4-3 4 3M6 14l4 3 4-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-    title: "Export anywhere",
-    body: "Download as semicolon CSV (Excel-ready) or JSON. Compatible with CoinTracking and other accounting platforms.",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M10 6v4.5l3 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-    title: "Multi-currency & multi-org",
-    body: "Set your base currency (USDT, EUR, USD…). Each organisation has isolated data, members, and settings.",
-  },
-];
+// ── helpers ─────────────────────────────────────────────────────────────────
 
-const STEPS = [
-  { n: "01", title: "Connect your wallets", body: "Add your Tron, ETH, BNB, or SOL addresses. AccPanel fetches the full transaction history automatically." },
-  { n: "02", title: "Classify & assign", body: "Tag transactions as Exchange, Revenue, Expense, or Debt. Link them to clients. Split legs when needed." },
-  { n: "03", title: "Report & export", body: "View FIFO P&L, balance sheets, and volume breakdowns. Export audit-ready CSV at any time." },
-];
+const TICKER = [
+  ["USDT/EUR", "1.0238", "+0.12%", "up"],
+  ["BTC/USDT", "104,238", "+1.84%", "up"],
+  ["ETH/USDT", "3,841.20", "−0.42%", "down"],
+  ["TRX/USDT", "0.2418",  "+0.78%", "up"],
+  ["SOL/USDT", "182.66",  "+2.31%", "up"],
+  ["USDT/CZK", "23.842",  "+0.04%", "up"],
+  ["BNB/USDT", "612.40",  "−0.18%", "down"],
+  ["USDC/EUR", "0.9215",  "+0.06%", "up"],
+  ["XRP/USDT", "2.4810",  "+3.12%", "up"],
+  ["DOGE/USDT","0.3892",  "−1.04%", "down"],
+] as const;
+
+const CHAINS = [
+  { code: "TRX", name: "TRON",     color: "var(--red)" },
+  { code: "ETH", name: "Ethereum", color: "var(--indigo)" },
+  { code: "BNB", name: "BNB",      color: "var(--amber)" },
+  { code: "SOL", name: "Solana",   color: "var(--accent)" },
+] as const;
+
+// ── page ────────────────────────────────────────────────────────────────────
 
 export default async function LandingPage() {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (user) redirect("/app/dashboard");
-  } catch { /* env not configured */ }
+  } catch { /* env not configured — render landing */ }
 
   return (
-    <div className={`${syne.variable}`} style={{ backgroundColor: "var(--bg)", color: "var(--text-1)", fontFamily: "var(--font-dm-sans, DM Sans, system-ui)" }}>
+    <div className={syne.variable}
+      style={{ backgroundColor: "var(--bg)", color: "var(--text-1)", fontFamily: "var(--font-dm-sans, DM Sans, system-ui)" }}>
 
-      {/* ── Nav ─────────────────────────────────────────────────────── */}
-      <header className="fixed top-0 inset-x-0 z-50 animate-fadein" style={{ borderBottom: "1px solid var(--border)", backdropFilter: "blur(12px)", backgroundColor: "rgba(7,9,12,0.85)" }}>
-        <div className="mx-auto max-w-6xl flex items-center justify-between h-14 px-6">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md text-sm font-bold" style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}>₿</span>
-            <span className="font-[family-name:var(--font-syne)] text-sm font-bold tracking-tight" style={{ color: "var(--text-1)" }}>AccPanel</span>
-          </div>
-          <nav className="flex items-center gap-3">
-            <Link href="/login" className="text-sm px-4 py-1.5 rounded-md transition-colors" style={{ color: "var(--text-2)" }}>Sign in</Link>
-            <Link href="/signup" className="text-sm px-4 py-1.5 rounded-md font-medium transition-colors"
-              style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}>Get started</Link>
+      {/* ─────────────────────────────────────────────────────────────────────
+         NAV
+         ───────────────────────────────────────────────────────────────────── */}
+      <header
+        className="fixed top-0 inset-x-0 z-50 animate-fadein"
+        style={{
+          borderBottom: "1px solid color-mix(in srgb, var(--border) 70%, transparent)",
+          backdropFilter: "saturate(140%) blur(14px)",
+          WebkitBackdropFilter: "saturate(140%) blur(14px)",
+          backgroundColor: "rgba(7,9,12,0.72)",
+        }}
+      >
+        <div className="mx-auto max-w-[1240px] flex items-center justify-between h-14 px-5 sm:px-8">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <span
+              className="flex h-7 w-7 items-center justify-center rounded-md text-sm font-bold transition-transform group-hover:scale-105"
+              style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}
+            >₿</span>
+            <span className="font-[family-name:var(--font-syne)] text-sm font-bold tracking-tight" style={{ color: "var(--text-1)" }}>
+              AccPanel
+            </span>
+            <span className="hidden sm:inline-block ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono tracking-widest"
+              style={{ color: "var(--text-3)", border: "1px solid var(--border)" }}>
+              v2.0
+            </span>
+          </Link>
+          <nav className="flex items-center gap-1 sm:gap-2">
+            <Link
+              href="#features"
+              className="hidden sm:inline-flex h-9 items-center px-3 text-xs font-medium transition-colors rounded-md"
+              style={{ color: "var(--text-2)" }}
+            >
+              Features
+            </Link>
+            <Link
+              href="#how"
+              className="hidden sm:inline-flex h-9 items-center px-3 text-xs font-medium transition-colors rounded-md"
+              style={{ color: "var(--text-2)" }}
+            >
+              How it works
+            </Link>
+            <Link
+              href="/login"
+              className="inline-flex h-9 items-center px-3 sm:px-4 text-xs font-medium rounded-md transition-colors"
+              style={{ color: "var(--text-2)" }}
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/signup"
+              className="inline-flex h-9 items-center px-3.5 sm:px-4 text-xs font-semibold rounded-md transition-opacity hover:opacity-90"
+              style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}
+            >
+              Open the panel
+            </Link>
           </nav>
         </div>
       </header>
 
-      {/* ── Hero ────────────────────────────────────────────────────── */}
-      <section className="min-h-screen flex items-center pt-14" style={{ background: "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(16,185,129,0.07) 0%, transparent 60%)" }}>
-        {/* subtle grid */}
-        <div className="absolute inset-0 pointer-events-none" style={{
-          backgroundImage: "linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)",
-          backgroundSize: "48px 48px",
-          opacity: 0.25,
-        }} />
+      {/* ─────────────────────────────────────────────────────────────────────
+         HERO
+         ───────────────────────────────────────────────────────────────────── */}
+      <section
+        className="relative isolate min-h-screen flex items-center pt-20 sm:pt-24 overflow-hidden"
+        style={{ backgroundColor: "var(--bg)" }}
+      >
+        {/* Mouse spotlight (desktop only, no-op on touch) */}
+        <MouseSpotlight className="absolute inset-0 -z-10 pointer-events-none" />
 
-        <div className="relative mx-auto max-w-6xl px-6 py-20 w-full">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
+        {/* Drifting gradient orb */}
+        <div
+          aria-hidden
+          className="absolute -z-20 pointer-events-none"
+          style={{
+            top: "-22%",
+            left: "50%",
+            width: 1200, height: 1200,
+            transform: "translateX(-50%)",
+            background: "radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 55%)",
+            animation: "mesh-drift 28s ease-in-out infinite",
+            filter: "blur(40px)",
+          }}
+        />
 
-            {/* Left */}
-            <div>
-              <div className="animate-fadeup inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium mb-8"
-                style={{ border: "1px solid rgba(16,185,129,0.3)", backgroundColor: "rgba(16,185,129,0.08)", color: "var(--accent)" }}>
-                <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ backgroundColor: "var(--accent)" }} />
-                Built for P2P traders
+        {/* Faint dot grid */}
+        <div
+          aria-hidden
+          className="absolute inset-0 -z-30 pointer-events-none"
+          style={{
+            backgroundImage: "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.045) 1px, transparent 0)",
+            backgroundSize: "28px 28px",
+            maskImage: "radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 90%)",
+            WebkitMaskImage: "radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 90%)",
+          }}
+        />
+
+        <div className="relative mx-auto max-w-[1240px] w-full px-5 sm:px-8 py-16 sm:py-20">
+          <div className="grid lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+
+            {/* ─── Left column ────────────────────────────────────────── */}
+            <div className="lg:col-span-7">
+              {/* Status pill */}
+              <div className="animate-fadeup inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-mono uppercase tracking-[0.16em] mb-8"
+                style={{
+                  border: "1px solid color-mix(in srgb, var(--accent) 28%, transparent)",
+                  backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)",
+                  color: "var(--accent)",
+                }}
+              >
+                <span className="relative inline-flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping"
+                    style={{ backgroundColor: "var(--accent)" }} />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5"
+                    style={{ backgroundColor: "var(--accent)" }} />
+                </span>
+                System operational · v2.0
               </div>
 
-              <h1 className="animate-fadeup delay-100 font-[family-name:var(--font-syne)] font-bold leading-none tracking-tight mb-6"
-                style={{ fontSize: "clamp(2.8rem, 5.5vw, 4.5rem)", color: "var(--text-1)" }}>
-                P2P CRYPTO<br />
-                ACCOUNTING.<br />
-                <span style={{ color: "var(--accent)" }}>DONE RIGHT.</span>
+              {/* Headline */}
+              <h1
+                className="animate-fadeup delay-100 font-[family-name:var(--font-syne)] font-bold mb-6"
+                style={{
+                  fontSize: "clamp(2.6rem, 7.4vw, 5.8rem)",
+                  lineHeight: 0.92,
+                  letterSpacing: "-0.025em",
+                  color: "var(--text-1)",
+                }}
+              >
+                Accounting<br/>
+                for the<br/>
+                <span style={{
+                  color: "var(--accent)",
+                  textShadow: "0 0 40px color-mix(in srgb, var(--accent) 28%, transparent)",
+                }}>
+                  on&#8209;chain
+                </span><br/>
+                economy.
               </h1>
 
-              <p className="animate-fadeup delay-200 text-base leading-relaxed mb-10 max-w-md" style={{ color: "var(--text-2)" }}>
-                Professional double-entry bookkeeping for traders who operate across
-                multiple wallets, chains, and currencies. From raw blockchain data
-                to audit-ready reports — in one panel.
+              {/* Subhead */}
+              <p
+                className="animate-fadeup delay-200 mb-9 max-w-[520px] leading-relaxed"
+                style={{ fontSize: "clamp(0.95rem, 1.2vw, 1.05rem)", color: "var(--text-5)" }}
+              >
+                A double-entry ledger built for crypto exchange offices.
+                Multi-chain auto-import, FIFO cost basis, KYC, audit-ready
+                exports — every transaction reconciled, every position visible,
+                every report defensible.
               </p>
 
+              {/* CTAs */}
               <div className="animate-fadeup delay-300 flex items-center gap-3 flex-wrap">
-                <Link href="/signup" className="inline-flex items-center gap-2 h-11 px-6 rounded-lg text-sm font-semibold transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}>
-                  Get started free
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M7.5 4l3.5 3-3.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <Link
+                  href="/signup"
+                  className="group inline-flex items-center gap-2 h-12 px-6 rounded-lg text-sm font-semibold transition-transform hover:translate-y-[-1px]"
+                  style={{
+                    backgroundColor: "var(--accent)",
+                    color: "#0d1117",
+                    boxShadow: "0 12px 32px -8px color-mix(in srgb, var(--accent) 60%, transparent)",
+                  }}
+                >
+                  Open the panel
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+                    className="transition-transform group-hover:translate-x-0.5">
+                    <path d="M3 7h8M7.5 4l3.5 3-3.5 3" stroke="currentColor" strokeWidth="1.6"
+                      strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
                 </Link>
-                <Link href="/login" className="inline-flex items-center gap-2 h-11 px-6 rounded-lg text-sm font-medium transition-colors"
-                  style={{ border: "1px solid var(--border-hi)", color: "var(--text-2)", backgroundColor: "transparent" }}>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-2 h-12 px-6 rounded-lg text-sm font-medium transition-colors hover:bg-white/[0.03]"
+                  style={{ border: "1px solid var(--border-hi)", color: "var(--text-2)" }}
+                >
                   Sign in
                 </Link>
               </div>
 
-              <div className="animate-fadeup delay-400 flex items-center gap-6 mt-12">
-                {[["Tron", "TRC-20"], ["Ethereum", "EVM"], ["Solana", "SPL"]].map(([chain, label]) => (
-                  <div key={chain} className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
-                    <span className="text-xs" style={{ color: "var(--text-3)" }}>{chain}</span>
-                    <span className="text-xs font-mono" style={{ color: "var(--text-3)", opacity: 0.6 }}>{label}</span>
+              {/* Chain rail */}
+              <div className="animate-fadeup delay-400 flex items-center gap-x-5 gap-y-2 flex-wrap mt-10 pt-8"
+                style={{ borderTop: "1px solid var(--border)" }}>
+                <span className="text-[9px] font-mono uppercase tracking-[0.18em]" style={{ color: "var(--text-3)" }}>
+                  Native chains
+                </span>
+                {CHAINS.map((c) => (
+                  <div key={c.code} className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{
+                      backgroundColor: c.color,
+                      boxShadow: `0 0 6px ${c.color}`,
+                      animation: "glow-breathe 3s ease-in-out infinite",
+                    }} />
+                    <span className="text-[11px] font-medium" style={{ color: "var(--text-2)" }}>{c.name}</span>
+                    <span className="text-[10px] font-mono" style={{ color: "var(--text-3)" }}>{c.code}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Right — Terminal mockup */}
-            <div className="animate-fadeup delay-200 lg:flex justify-end hidden">
-              <div className="relative w-full max-w-[440px]" style={{ animation: "pulse-border 3s ease infinite" }}>
-                {/* Glow */}
-                <div className="absolute -inset-px rounded-xl" style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.15), transparent, rgba(16,185,129,0.05))", filter: "blur(1px)" }} />
-
-                <div className="relative rounded-xl overflow-hidden" style={{ border: "1px solid rgba(16,185,129,0.25)", backgroundColor: "var(--surface)" }}>
-                  {/* Title bar */}
-                  <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: "var(--raised)", borderBottom: "1px solid var(--border)" }}>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#ef4444" }} />
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
-                    </div>
-                    <span className="text-xs font-mono" style={{ color: "var(--text-3)" }}>AccPanel — Transactions</span>
-                    <span className="text-xs font-mono" style={{ color: "var(--text-3)" }}>12 Apr 2026</span>
-                  </div>
-
-                  {/* Scanner overlay */}
-                  <div className="absolute left-0 right-0 h-8 pointer-events-none z-10" style={{
-                    background: "linear-gradient(to bottom, transparent, rgba(16,185,129,0.06), transparent)",
-                    animation: "scanline 3.5s linear infinite",
-                    top: "0",
-                  }} />
-
-                  {/* Table header */}
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
-                    {["DATE", "TYPE", "AMOUNT"].map(h => (
-                      <span key={h} className="text-[10px] font-mono font-medium tracking-widest" style={{ color: "var(--text-3)" }}>{h}</span>
-                    ))}
-                  </div>
-
-                  {/* Rows */}
-                  {[
-                    { date: "12 Apr", type: "Exchange", amount: "+1,250.00", ccy: "USDT", dir: "in" },
-                    { date: "12 Apr", type: "Revenue",  amount: "+  842.00", ccy: "USDT", dir: "in" },
-                    { date: "11 Apr", type: "Transfer", amount: "-2,000.00", ccy: "TRX",  dir: "out" },
-                    { date: "11 Apr", type: "Exchange", amount: "+  567.50", ccy: "USDT", dir: "in" },
-                    { date: "10 Apr", type: "Fee",      amount: "-    3.50", ccy: "TRX",  dir: "out" },
-                    { date: "09 Apr", type: "Revenue",  amount: "+  390.00", ccy: "USDT", dir: "in" },
-                  ].map((row, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-4 py-2.5"
-                      style={{ borderBottom: "1px solid var(--border)", animation: `row-in 0.4s ${0.05 * i + 0.3}s both` }}>
-                      <span className="text-xs font-mono" style={{ color: "var(--text-3)" }}>{row.date}</span>
-                      <span className="text-xs" style={{ color: "var(--text-2)" }}>{row.type}</span>
-                      <span className="text-xs font-mono whitespace-nowrap" style={{ color: row.dir === "in" ? "var(--accent)" : "var(--red)" }}>
-                        {row.amount} {row.ccy}
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Balance footer */}
-                  <div className="px-4 py-3" style={{ backgroundColor: "rgba(16,185,129,0.04)", borderTop: "1px solid rgba(16,185,129,0.15)" }}>
-                    <div className="flex justify-between items-baseline">
-                      <span className="text-[10px] font-mono tracking-widest" style={{ color: "var(--text-3)" }}>NET INCOME</span>
-                      <span className="text-sm font-mono font-medium" style={{ color: "var(--accent)" }}>+3,046.00 USDT</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Cursor blink */}
-                <div className="absolute -bottom-3 left-4 flex items-center gap-1">
-                  <span className="text-xs font-mono" style={{ color: "var(--accent)", opacity: 0.5 }}>$ _</span>
-                  <span className="w-1.5 h-3.5 inline-block" style={{ backgroundColor: "var(--accent)", animation: "cursor-blink 1.1s step-end infinite" }} />
-                </div>
-              </div>
+            {/* ─── Right column: live ledger panel ─────────────────────── */}
+            <div className="lg:col-span-5 animate-fadeup delay-300 hidden lg:flex justify-end">
+              <HeroLedger />
             </div>
-
           </div>
         </div>
+
+        {/* Bottom fade into ticker */}
+        <div aria-hidden className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
+          style={{ background: "linear-gradient(to bottom, transparent, var(--bg))" }} />
       </section>
 
-      {/* ── Ticker ──────────────────────────────────────────────────── */}
-      <div className="overflow-hidden py-3" style={{ borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
-        <div className="flex gap-12 whitespace-nowrap" style={{ animation: "ticker 30s linear infinite" }}>
-          {[...Array(2)].map((_v, d) => (
-            <div key={d} className="flex gap-12 shrink-0">
-              {[
-                ["USDT/TRX", "Exchange"],
-                ["Multi-chain import", "Tron · ETH · BNB · SOL"],
-                ["FIFO P&L", "Cost basis tracking"],
-                ["Client tracking", "Counterparty management"],
-                ["Audit exports", "CSV · JSON"],
-                ["Multi-org", "Role-based access"],
-                ["Double-entry", "Debit / Credit legs"],
-              ].map(([a, b]) => (
-                <div key={a} className="flex items-center gap-2 shrink-0">
-                  <span className="w-1 h-1 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
-                  <span className="text-xs font-medium" style={{ color: "var(--text-2)" }}>{a}</span>
-                  <span className="text-xs font-mono" style={{ color: "var(--text-3)" }}>{b}</span>
+      {/* ─────────────────────────────────────────────────────────────────────
+         TICKER
+         ───────────────────────────────────────────────────────────────────── */}
+      <div className="overflow-hidden py-3.5 relative"
+        style={{
+          borderTop: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
+          backgroundColor: "var(--surface)",
+        }}>
+        {/* Edge fades */}
+        <div aria-hidden className="absolute left-0 top-0 bottom-0 w-24 z-10 pointer-events-none"
+          style={{ background: "linear-gradient(to right, var(--surface), transparent)" }} />
+        <div aria-hidden className="absolute right-0 top-0 bottom-0 w-24 z-10 pointer-events-none"
+          style={{ background: "linear-gradient(to left, var(--surface), transparent)" }} />
+
+        <div className="flex gap-10 whitespace-nowrap" style={{ animation: "ticker 50s linear infinite" }}>
+          {[...Array(2)].map((_v, dup) => (
+            <div key={dup} className="flex gap-10 shrink-0">
+              {TICKER.map(([sym, price, chg, dir]) => (
+                <div key={`${dup}-${sym}`} className="flex items-baseline gap-2 shrink-0">
+                  <span className="text-[10px] font-mono font-semibold tracking-wider"
+                    style={{ color: "var(--text-2)" }}>
+                    {sym}
+                  </span>
+                  <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--text-1)" }}>
+                    {price}
+                  </span>
+                  <span className="text-[10px] font-mono tabular-nums"
+                    style={{ color: dir === "up" ? "var(--accent)" : "var(--red)" }}>
+                    {chg}
+                  </span>
                 </div>
               ))}
             </div>
@@ -257,95 +295,266 @@ export default async function LandingPage() {
         </div>
       </div>
 
-      {/* ── Features ────────────────────────────────────────────────── */}
-      <section className="py-24" style={{ backgroundColor: "var(--bg)" }}>
-        <div className="mx-auto max-w-6xl px-6">
-          <div className="mb-14">
-            <p className="text-xs font-mono tracking-widest mb-3" style={{ color: "var(--accent)" }}>FEATURES</p>
-            <h2 className="font-[family-name:var(--font-syne)] font-bold text-3xl tracking-tight" style={{ color: "var(--text-1)" }}>
-              Everything a P2P trader needs
+      {/* ─────────────────────────────────────────────────────────────────────
+         FEATURES (bento)
+         ───────────────────────────────────────────────────────────────────── */}
+      <ScrollReveal>
+      <section id="features" className="relative py-24 sm:py-32" style={{ backgroundColor: "var(--bg)" }}>
+        <div className="mx-auto max-w-[1240px] px-5 sm:px-8">
+
+          {/* Section header */}
+          <div className="reveal max-w-2xl mb-14 sm:mb-20">
+            <p className="text-[10px] font-mono tracking-[0.22em] uppercase mb-4"
+              style={{ color: "var(--accent)" }}>
+              · 02 / Capabilities
+            </p>
+            <h2 className="font-[family-name:var(--font-syne)] font-bold tracking-tight"
+              style={{
+                fontSize: "clamp(1.9rem, 4vw, 3rem)",
+                lineHeight: 1.05,
+                color: "var(--text-1)",
+              }}>
+              Built for the operators who keep<br className="hidden sm:inline"/>
+              <span style={{ color: "var(--accent)" }}>real money moving</span> through crypto rails.
             </h2>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px" style={{ backgroundColor: "var(--border)" }}>
-            {FEATURES.map((f) => (
-              <div key={f.title} className="p-6 flex flex-col gap-4" style={{ backgroundColor: "var(--surface)" }}>
-                <div className="w-9 h-9 flex items-center justify-center rounded-lg" style={{ backgroundColor: "var(--accent-lo)", color: "var(--accent)", border: "1px solid rgba(16,185,129,0.2)" }}>
-                  {f.icon}
-                </div>
-                <div>
-                  <h3 className="font-semibold text-sm mb-1.5" style={{ color: "var(--text-1)" }}>{f.title}</h3>
-                  <p className="text-sm leading-relaxed" style={{ color: "var(--text-2)" }}>{f.body}</p>
-                </div>
+          {/* Bento grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+
+            {/* Multi-chain — large hero card spans 2 cols on lg */}
+            <BentoCard className="md:col-span-2 lg:col-span-2 reveal reveal-d1" minH={320}>
+              <div className="relative h-full p-6 sm:p-8 flex flex-col">
+                <BentoLabel>01</BentoLabel>
+                <BentoTitle>Native multi-chain import</BentoTitle>
+                <BentoBody>
+                  One connector per chain — TRON, Ethereum, BNB, Solana — fetches
+                  the full transaction history, deduplicates by hash, and writes
+                  double-entry legs in one shot. Re-import any time; nothing
+                  doubles up.
+                </BentoBody>
+                <ChainOrbital />
               </div>
-            ))}
+            </BentoCard>
+
+            {/* FIFO P&L */}
+            <BentoCard className="lg:row-span-2 reveal reveal-d2" minH={320}>
+              <div className="relative h-full p-6 sm:p-8 flex flex-col">
+                <BentoLabel>02</BentoLabel>
+                <BentoTitle>FIFO cost basis &amp; P&amp;L</BentoTitle>
+                <BentoBody>
+                  Realized gains computed per lot, FIFO. Spread analysis per
+                  trading pair. Disposal breakdown links every realized gain
+                  back to the buy and sell that produced it.
+                </BentoBody>
+                <FifoChart />
+              </div>
+            </BentoCard>
+
+            {/* Real-time positions */}
+            <BentoCard className="reveal reveal-d3">
+              <div className="p-6 flex flex-col">
+                <BentoLabel>03</BentoLabel>
+                <BentoTitle>Real-time net positions</BentoTitle>
+                <BentoBody compact>
+                  Inventory per currency, updated as transactions land.
+                  Actual vs. projected splits show what&apos;s in process.
+                </BentoBody>
+                <PositionsMini />
+              </div>
+            </BentoCard>
+
+            {/* Multi-tenant */}
+            <BentoCard className="reveal reveal-d4">
+              <div className="p-6 flex flex-col">
+                <BentoLabel>04</BentoLabel>
+                <BentoTitle>Multi-tenant orgs</BentoTitle>
+                <BentoBody compact>
+                  Each organisation has isolated data, members, and roles.
+                  Invite by email, assign admin / accountant / viewer.
+                </BentoBody>
+                <TenantStack />
+              </div>
+            </BentoCard>
+
+            {/* Client / KYC */}
+            <BentoCard className="reveal reveal-d5">
+              <div className="p-6 flex flex-col">
+                <BentoLabel>05</BentoLabel>
+                <BentoTitle>Client &amp; KYC tracking</BentoTitle>
+                <BentoBody compact>
+                  Counterparty profiles, source-of-funds documents, debt
+                  ledgers per client. Compliance-ready out of the box.
+                </BentoBody>
+                <KycMini />
+              </div>
+            </BentoCard>
+
+            {/* Audit exports */}
+            <BentoCard className="md:col-span-2 reveal reveal-d6">
+              <div className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+                <div className="max-w-md">
+                  <BentoLabel>06</BentoLabel>
+                  <BentoTitle>Audit-ready exports</BentoTitle>
+                  <BentoBody compact>
+                    Download the full ledger as semicolon CSV (Excel-native)
+                    or JSON. Compatible with CoinTracking and most accountants&apos;
+                    tools.
+                  </BentoBody>
+                </div>
+                <ExportChips />
+              </div>
+            </BentoCard>
+
           </div>
         </div>
       </section>
+      </ScrollReveal>
 
-      {/* ── How it works ────────────────────────────────────────────── */}
-      <section className="py-24" style={{ backgroundColor: "var(--surface)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
-        <div className="mx-auto max-w-6xl px-6">
-          <div className="mb-14">
-            <p className="text-xs font-mono tracking-widest mb-3" style={{ color: "var(--accent)" }}>HOW IT WORKS</p>
-            <h2 className="font-[family-name:var(--font-syne)] font-bold text-3xl tracking-tight" style={{ color: "var(--text-1)" }}>
-              From wallet to report in minutes
+      {/* ─────────────────────────────────────────────────────────────────────
+         HOW IT WORKS
+         ───────────────────────────────────────────────────────────────────── */}
+      <ScrollReveal>
+      <section id="how" className="py-24 sm:py-32 relative" style={{
+        backgroundColor: "var(--surface)",
+        borderTop: "1px solid var(--border)",
+        borderBottom: "1px solid var(--border)",
+      }}>
+        <div className="mx-auto max-w-[1240px] px-5 sm:px-8">
+          <div className="reveal max-w-2xl mb-14 sm:mb-20">
+            <p className="text-[10px] font-mono tracking-[0.22em] uppercase mb-4"
+              style={{ color: "var(--accent)" }}>
+              · 03 / Onboarding
+            </p>
+            <h2 className="font-[family-name:var(--font-syne)] font-bold tracking-tight"
+              style={{
+                fontSize: "clamp(1.9rem, 4vw, 3rem)",
+                lineHeight: 1.05,
+                color: "var(--text-1)",
+              }}>
+              From wallet address to <span style={{ color: "var(--accent)" }}>signed report</span>,
+              in three moves.
             </h2>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-3 gap-10 md:gap-6 relative">
+            {/* Connecting hairline (desktop only) */}
+            <div aria-hidden className="hidden md:block absolute top-7 left-[16%] right-[16%] h-px"
+              style={{ background: "linear-gradient(to right, transparent, color-mix(in srgb, var(--accent) 35%, transparent), transparent)" }} />
+
             {STEPS.map((s, i) => (
-              <div key={s.n} className="relative">
-                {i < STEPS.length - 1 && (
-                  <div className="hidden md:block absolute top-5 left-[calc(100%+1rem)] w-[calc(100%-2rem)] h-px" style={{ background: "linear-gradient(to right, var(--accent-lo), transparent)" }} />
-                )}
-                <div className="font-[family-name:var(--font-syne)] font-bold text-5xl mb-4 leading-none" style={{ color: "rgba(16,185,129,0.15)" }}>{s.n}</div>
-                <h3 className="font-semibold text-base mb-2" style={{ color: "var(--text-1)" }}>{s.title}</h3>
-                <p className="text-sm leading-relaxed" style={{ color: "var(--text-2)" }}>{s.body}</p>
+              <div key={s.n} className={`reveal reveal-d${i+1} relative`}>
+                {/* Big number + dot */}
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="relative">
+                    <span className="font-[family-name:var(--font-syne)] font-bold leading-none block"
+                      style={{
+                        fontSize: "3.4rem",
+                        color: "color-mix(in srgb, var(--accent) 18%, transparent)",
+                        WebkitTextStroke: "1px color-mix(in srgb, var(--accent) 35%, transparent)",
+                      }}>
+                      {s.n}
+                    </span>
+                  </div>
+                  <span className="w-2.5 h-2.5 rounded-full mt-1"
+                    style={{
+                      backgroundColor: "var(--accent)",
+                      boxShadow: "0 0 12px color-mix(in srgb, var(--accent) 60%, transparent)",
+                    }} />
+                </div>
+                <h3 className="font-[family-name:var(--font-syne)] font-semibold text-xl mb-2.5"
+                  style={{ color: "var(--text-1)" }}>
+                  {s.title}
+                </h3>
+                <p className="text-sm leading-relaxed max-w-sm" style={{ color: "var(--text-5)" }}>
+                  {s.body}
+                </p>
               </div>
             ))}
           </div>
         </div>
       </section>
+      </ScrollReveal>
 
-      {/* ── CTA ─────────────────────────────────────────────────────── */}
-      <section className="py-28" style={{ background: "radial-gradient(ellipse 70% 80% at 50% 50%, rgba(16,185,129,0.06) 0%, transparent 70%)" }}>
-        <div className="mx-auto max-w-6xl px-6 text-center">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-8" style={{ backgroundColor: "var(--accent-lo)", border: "1px solid rgba(16,185,129,0.25)" }}>
-            <span className="text-2xl font-bold" style={{ color: "var(--accent)" }}>₿</span>
-          </div>
-          <h2 className="font-[family-name:var(--font-syne)] font-bold text-4xl tracking-tight mb-5" style={{ color: "var(--text-1)" }}>
-            Start tracking your trades today
+      {/* ─────────────────────────────────────────────────────────────────────
+         CTA
+         ───────────────────────────────────────────────────────────────────── */}
+      <ScrollReveal>
+      <section className="relative py-28 sm:py-40 overflow-hidden">
+        {/* Animated mesh */}
+        <div aria-hidden className="absolute inset-0 -z-10 pointer-events-none"
+          style={{
+            background: "radial-gradient(ellipse 70% 70% at 50% 50%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%)",
+            animation: "mesh-drift 22s ease-in-out infinite",
+          }}
+        />
+        {/* Hairline horizons */}
+        <div aria-hidden className="absolute left-0 right-0 top-1/2 h-px"
+          style={{ background: "linear-gradient(to right, transparent, color-mix(in srgb, var(--accent) 25%, transparent), transparent)" }} />
+
+        <div className="reveal mx-auto max-w-[920px] px-5 sm:px-8 text-center">
+          <p className="text-[10px] font-mono tracking-[0.22em] uppercase mb-5" style={{ color: "var(--accent)" }}>
+            · 04 / Get started
+          </p>
+          <h2 className="font-[family-name:var(--font-syne)] font-bold tracking-tight mb-6"
+            style={{
+              fontSize: "clamp(2.4rem, 6vw, 4.4rem)",
+              lineHeight: 0.95,
+              color: "var(--text-1)",
+            }}>
+            Ship the spreadsheet.<br/>
+            <span style={{ color: "var(--accent)" }}>Open the panel.</span>
           </h2>
-          <p className="text-base mb-10 max-w-lg mx-auto" style={{ color: "var(--text-2)" }}>
-            Set up your organisation in under 2 minutes. Free to start.
+          <p className="text-base mb-12 max-w-xl mx-auto leading-relaxed" style={{ color: "var(--text-5)" }}>
+            Provision your organisation in under two minutes.
+            Free while in beta.
           </p>
           <div className="flex items-center justify-center gap-3 flex-wrap">
-            <Link href="/signup" className="inline-flex items-center gap-2 h-12 px-8 rounded-lg text-sm font-semibold"
-              style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}>
+            <Link href="/signup" className="group inline-flex items-center gap-2 h-12 px-7 rounded-lg text-sm font-semibold transition-transform hover:translate-y-[-1px]"
+              style={{
+                backgroundColor: "var(--accent)",
+                color: "#0d1117",
+                boxShadow: "0 14px 36px -8px color-mix(in srgb, var(--accent) 65%, transparent)",
+              }}>
               Create free account
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+                className="transition-transform group-hover:translate-x-0.5">
+                <path d="M3 7h8M7.5 4l3.5 3-3.5 3" stroke="currentColor" strokeWidth="1.6"
+                  strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </Link>
-            <Link href="/login" className="inline-flex items-center h-12 px-8 rounded-lg text-sm font-medium"
+            <Link href="/login" className="inline-flex items-center h-12 px-7 rounded-lg text-sm font-medium transition-colors hover:bg-white/[0.03]"
               style={{ border: "1px solid var(--border-hi)", color: "var(--text-2)" }}>
-              Sign in
+              I already have one
             </Link>
           </div>
         </div>
       </section>
+      </ScrollReveal>
 
-      {/* ── Footer ──────────────────────────────────────────────────── */}
-      <footer className="py-8" style={{ borderTop: "1px solid var(--border)" }}>
-        <div className="mx-auto max-w-6xl px-6 flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded text-xs font-bold" style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}>₿</span>
-            <span className="text-sm font-medium" style={{ color: "var(--text-3)" }}>AccPanel</span>
+      {/* ─────────────────────────────────────────────────────────────────────
+         FOOTER
+         ───────────────────────────────────────────────────────────────────── */}
+      <footer className="py-10 sm:py-12" style={{ borderTop: "1px solid var(--border)" }}>
+        <div className="mx-auto max-w-[1240px] px-5 sm:px-8 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-6 w-6 items-center justify-center rounded text-[11px] font-bold"
+              style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}>₿</span>
+            <span className="font-[family-name:var(--font-syne)] text-sm font-bold tracking-tight"
+              style={{ color: "var(--text-2)" }}>AccPanel</span>
+            <span className="hidden sm:inline ml-2 text-[10px] font-mono"
+              style={{ color: "var(--text-3)" }}>
+              · made for serious operators.
+            </span>
           </div>
-          <p className="text-xs" style={{ color: "var(--text-3)" }}>
-            P2P crypto trading accounting panel
+          <p className="text-[11px] font-mono" style={{ color: "var(--text-3)" }}>
+            © {new Date().getFullYear()} · all rights reserved
           </p>
           <div className="flex items-center gap-5">
-            <Link href="/login" className="text-xs transition-colors" style={{ color: "var(--text-3)" }}>Sign in</Link>
-            <Link href="/signup" className="text-xs transition-colors" style={{ color: "var(--text-3)" }}>Sign up</Link>
+            <Link href="/login" className="text-[11px] font-medium transition-colors hover:opacity-80"
+              style={{ color: "var(--text-3)" }}>Sign in</Link>
+            <Link href="/signup" className="text-[11px] font-medium transition-colors hover:opacity-80"
+              style={{ color: "var(--text-3)" }}>Sign up</Link>
           </div>
         </div>
       </footer>
@@ -353,3 +562,343 @@ export default async function LandingPage() {
     </div>
   );
 }
+
+// ── small helpers (server components / pure JSX) ────────────────────────────
+
+function BentoCard({
+  children, className = "", minH,
+}: { children: React.ReactNode; className?: string; minH?: number }) {
+  return (
+    <div
+      className={`group relative rounded-2xl overflow-hidden transition-colors ${className}`}
+      style={{
+        backgroundColor: "var(--surface)",
+        border: "1px solid var(--border)",
+        minHeight: minH,
+      }}
+    >
+      {/* hover glow ring */}
+      <div aria-hidden className="absolute inset-0 rounded-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent)" }} />
+      {children}
+    </div>
+  );
+}
+
+function BentoLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-mono tracking-[0.22em] uppercase mb-3" style={{ color: "var(--text-3)" }}>
+      · {children}
+    </p>
+  );
+}
+
+function BentoTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="font-[family-name:var(--font-syne)] font-semibold mb-2.5"
+      style={{ fontSize: "clamp(1.05rem, 1.4vw, 1.25rem)", color: "var(--text-1)", letterSpacing: "-0.005em" }}>
+      {children}
+    </h3>
+  );
+}
+
+function BentoBody({ children, compact }: { children: React.ReactNode; compact?: boolean }) {
+  return (
+    <p className={`text-sm leading-relaxed ${compact ? "max-w-xs" : "max-w-md"}`}
+      style={{ color: "var(--text-5)" }}>
+      {children}
+    </p>
+  );
+}
+
+// ── visual elements ─────────────────────────────────────────────────────────
+
+function HeroLedger() {
+  const rows = [
+    { date: "12 Apr · 14:22", chain: "TRX",  type: "Exchange", amt: "+1,250.00", ccy: "USDT", dir: "in"  },
+    { date: "12 Apr · 13:51", chain: "ETH",  type: "Exchange", amt: "+  842.00", ccy: "USDT", dir: "in"  },
+    { date: "12 Apr · 11:08", chain: "BNB",  type: "Transfer", amt: "−2,000.00", ccy: "BNB",  dir: "out" },
+    { date: "11 Apr · 22:34", chain: "SOL",  type: "Exchange", amt: "+  567.50", ccy: "USDT", dir: "in"  },
+    { date: "11 Apr · 18:02", chain: "TRX",  type: "Fee",      amt: "−    3.50", ccy: "TRX",  dir: "out" },
+  ];
+
+  return (
+    <div className="relative w-full max-w-[460px]">
+      {/* Outer glow */}
+      <div aria-hidden className="absolute -inset-4 rounded-3xl pointer-events-none"
+        style={{
+          background: "radial-gradient(ellipse 80% 60% at 50% 50%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%)",
+          filter: "blur(20px)",
+        }} />
+
+      <div className="relative rounded-2xl overflow-hidden"
+        style={{
+          backgroundColor: "var(--surface)",
+          border: "1px solid color-mix(in srgb, var(--accent) 20%, var(--border))",
+          boxShadow: "0 32px 80px -20px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)",
+        }}>
+        {/* Title bar */}
+        <div className="flex items-center justify-between px-4 py-2.5"
+          style={{ backgroundColor: "var(--raised)", borderBottom: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#ef4444" }} />
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
+          </div>
+          <span className="text-[10px] font-mono tracking-wider" style={{ color: "var(--text-3)" }}>
+            ledger.live
+          </span>
+          <span className="text-[10px] font-mono" style={{ color: "var(--accent)" }}>
+            ●REC
+          </span>
+        </div>
+
+        {/* Column headings */}
+        <div className="grid grid-cols-[auto_auto_1fr_auto] gap-3 px-4 py-2"
+          style={{ borderBottom: "1px solid var(--border)" }}>
+          {["TIME","CHAIN","TYPE","AMOUNT"].map(h => (
+            <span key={h} className="text-[9px] font-mono font-medium tracking-[0.16em]"
+              style={{ color: "var(--text-3)" }}>{h}</span>
+          ))}
+        </div>
+
+        {/* Rows */}
+        <div className="px-4 py-2">
+          {rows.map((row, i) => (
+            <div key={i}
+              className="grid grid-cols-[auto_auto_1fr_auto] gap-3 items-center py-2.5"
+              style={{
+                borderBottom: i < rows.length - 1 ? "1px solid color-mix(in srgb, var(--border) 60%, transparent)" : "none",
+                animation: `ledger-cycle 12s ease-in-out ${i * 1.4}s infinite`,
+              }}>
+              <span className="text-[10px] font-mono" style={{ color: "var(--text-3)" }}>{row.date}</span>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+                style={{ color: "var(--text-2)", backgroundColor: "var(--raised)" }}>
+                {row.chain}
+              </span>
+              <span className="text-[11px]" style={{ color: "var(--text-2)" }}>{row.type}</span>
+              <span className="text-[11px] font-mono whitespace-nowrap tabular-nums"
+                style={{ color: row.dir === "in" ? "var(--accent)" : "var(--red)" }}>
+                {row.amt} <span style={{ opacity: 0.65 }}>{row.ccy}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Net */}
+        <div className="px-4 py-3 flex items-center justify-between"
+          style={{
+            borderTop: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)",
+            backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)",
+          }}>
+          <span className="text-[9px] font-mono tracking-[0.18em]" style={{ color: "var(--text-3)" }}>
+            NET · 24H
+          </span>
+          <span className="text-sm font-mono font-semibold tabular-nums" style={{ color: "var(--accent)" }}>
+            +3,046.00 USDT
+          </span>
+        </div>
+      </div>
+
+      {/* Cursor */}
+      <div className="absolute -bottom-7 left-2 flex items-center gap-1">
+        <span className="text-[11px] font-mono" style={{ color: "var(--accent)", opacity: 0.55 }}>$ accpanel sync</span>
+        <span className="w-1.5 h-3.5 inline-block ml-0.5"
+          style={{ backgroundColor: "var(--accent)", animation: "cursor-blink 1.1s step-end infinite" }} />
+      </div>
+    </div>
+  );
+}
+
+function ChainOrbital() {
+  return (
+    <div aria-hidden className="absolute right-[-50px] bottom-[-50px] w-[300px] h-[300px] pointer-events-none">
+      {/* Concentric rings */}
+      <div className="absolute inset-0" style={{ animation: "orbit-slow 80s linear infinite" }}>
+        {[100, 70, 40].map((pct, i) => (
+          <div key={i} className="absolute rounded-full"
+            style={{
+              top: "50%", left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: `${pct}%`, height: `${pct}%`,
+              border: `1px dashed color-mix(in srgb, var(--accent) ${22 - i*4}%, transparent)`,
+            }} />
+        ))}
+      </div>
+      {/* Chain badges around the largest ring */}
+      <div className="absolute inset-0" style={{ animation: "orbit-slow 60s linear infinite" }}>
+        {CHAINS.map((c, i) => {
+          const angle = (i / CHAINS.length) * 2 * Math.PI - Math.PI / 4;
+          const r = 110;
+          return (
+            <div key={c.code}
+              className="absolute flex items-center justify-center rounded-full font-[family-name:var(--font-syne)] text-[11px] font-bold"
+              style={{
+                top: "50%", left: "50%",
+                transform: `translate(calc(${Math.cos(angle) * r}px - 50%), calc(${Math.sin(angle) * r}px - 50%))`,
+                width: 36, height: 36,
+                backgroundColor: "var(--surface)",
+                border: `1px solid ${c.color}`,
+                color: c.color,
+                boxShadow: `0 0 14px color-mix(in srgb, ${c.color} 35%, transparent)`,
+              }}>
+              {c.code}
+            </div>
+          );
+        })}
+      </div>
+      {/* Center node */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold"
+          style={{
+            backgroundColor: "var(--accent)",
+            color: "#0d1117",
+            boxShadow: "0 0 24px color-mix(in srgb, var(--accent) 55%, transparent)",
+          }}>₿</div>
+      </div>
+    </div>
+  );
+}
+
+function FifoChart() {
+  // SVG sparkline that draws in via stroke-dashoffset
+  return (
+    <div className="mt-6 flex-1 flex flex-col justify-end">
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="text-[9px] font-mono uppercase tracking-[0.16em]" style={{ color: "var(--text-3)" }}>
+          USDT/EUR realized
+        </span>
+        <span className="text-sm font-mono tabular-nums font-semibold" style={{ color: "var(--accent)" }}>
+          +€4,218
+        </span>
+      </div>
+      <svg viewBox="0 0 200 90" className="w-full h-[110px]" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="fillg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stopColor="var(--accent)" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d="M0,72 L20,68 L40,55 L60,62 L80,42 L100,48 L120,30 L140,38 L160,18 L180,24 L200,8 L200,90 L0,90 Z"
+          fill="url(#fillg)" />
+        <path d="M0,72 L20,68 L40,55 L60,62 L80,42 L100,48 L120,30 L140,38 L160,18 L180,24 L200,8"
+          fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+          strokeDasharray="400" strokeDashoffset="400"
+          style={{ animation: "chart-draw 2.4s ease-out 0.4s forwards" }} />
+        {/* Last point */}
+        <circle cx="200" cy="8" r="3" fill="var(--accent)">
+          <animate attributeName="r" values="3;5;3" dur="1.8s" repeatCount="indefinite" />
+        </circle>
+      </svg>
+      <div className="flex justify-between text-[9px] font-mono mt-1.5" style={{ color: "var(--text-3)" }}>
+        <span>30d</span><span>now</span>
+      </div>
+    </div>
+  );
+}
+
+function PositionsMini() {
+  const items = [
+    { c: "USDT", v: "+12,840", up: true  },
+    { c: "EUR",  v: "+ 4,218", up: true  },
+    { c: "TRX",  v: "−   850", up: false },
+  ];
+  return (
+    <div className="mt-6 flex flex-col gap-1.5">
+      {items.map(i => (
+        <div key={i.c} className="flex items-center justify-between py-1.5 px-2.5 rounded"
+          style={{ backgroundColor: "var(--raised)" }}>
+          <span className="text-[11px] font-medium" style={{ color: "var(--text-2)" }}>{i.c}</span>
+          <span className="text-[12px] font-mono font-semibold tabular-nums"
+            style={{ color: i.up ? "var(--accent)" : "var(--red)" }}>
+            {i.v}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TenantStack() {
+  return (
+    <div className="mt-6 relative h-[88px]">
+      {[0, 1, 2].map(i => (
+        <div key={i} className="absolute left-0 right-0 rounded-lg p-2.5 flex items-center gap-2"
+          style={{
+            top: i * 12,
+            height: 44,
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            transform: `translateY(${i * 6}px) scale(${1 - i * 0.04})`,
+            opacity: 1 - i * 0.18,
+            zIndex: 3 - i,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+          }}>
+          <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold"
+            style={{ backgroundColor: "var(--accent)", color: "#0d1117" }}>
+            {["A","B","C"][i]}
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="h-1.5 rounded mb-1.5" style={{ backgroundColor: "var(--border-hi)", width: `${72 - i*15}%` }} />
+            <div className="h-1 rounded" style={{ backgroundColor: "var(--border)", width: `${50 - i*10}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KycMini() {
+  return (
+    <div className="mt-6 flex gap-2">
+      {["PASS","ID","POA"].map((k) => (
+        <div key={k} className="flex-1 rounded p-2.5 flex flex-col gap-1.5"
+          style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between">
+            <span className="w-3 h-3.5 rounded-sm" style={{
+              background: "linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 50%, transparent))",
+            }} />
+            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
+          </div>
+          <span className="text-[9px] font-mono" style={{ color: "var(--text-3)" }}>{k}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExportChips() {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {["CSV", "JSON", "XLSX", "PDF"].map((f, i) => (
+        <span key={f}
+          className="text-[11px] font-mono font-semibold px-3 py-2 rounded-md"
+          style={{
+            backgroundColor: i === 0 ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "var(--raised)",
+            border: i === 0 ? "1px solid color-mix(in srgb, var(--accent) 35%, transparent)" : "1px solid var(--border)",
+            color: i === 0 ? "var(--accent)" : "var(--text-3)",
+          }}>
+          {f}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Connect your wallets",
+    body: "Add TRON, Ethereum, BNB, or Solana addresses. The full transaction history streams in within seconds — no exchange API keys, no CSV gymnastics.",
+  },
+  {
+    n: "02",
+    title: "Auto-classify & assign",
+    body: "Each transaction lands as a double-entry pair. Tag types, link counterparties, attach KYC. The review queue surfaces only the rows that need a human.",
+  },
+  {
+    n: "03",
+    title: "Reconcile & report",
+    body: "FIFO P&L, spread analysis, debt ledgers, audit-ready exports. Defensible reports, on demand, in any format your accountant accepts.",
+  },
+];
