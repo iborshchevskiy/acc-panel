@@ -74,7 +74,7 @@ export default async function AppLayout({
       >
         <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
         <main
-          className="flex flex-1 flex-col overflow-y-auto"
+          className="flex flex-1 flex-col overflow-y-auto pt-12 md:pt-0"
           style={{
             backgroundColor: "var(--bg)",
             // PWA standalone: keep the last scroll item clear of the iOS home

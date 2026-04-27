@@ -232,6 +232,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     return (v >= 0 ? "+" : "") + v.toLocaleString(undefined, { maximumFractionDigits: abs > 10000 ? 0 : abs > 1 ? 2 : 6 });
   };
 
+  const periodLabel = preset === "all" ? "All-time" : preset === "custom" ? `${fromStr} → ${toStr}` : preset.toUpperCase();
+
   return (
     <div className="flex flex-col gap-4 p-3 sm:gap-5 sm:p-6">
 
@@ -249,7 +251,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <DashboardFilters from={fromStr} to={toStr} preset={preset} />
           <Link
             href="/app/analytics"
-            className="h-6 px-2.5 flex items-center rounded text-xs font-medium transition-colors"
+            className="h-7 px-2.5 flex items-center rounded text-xs font-medium transition-colors"
             style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)", color: "var(--text-4)" }}
           >
             Analytics →
@@ -257,96 +259,82 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* ── KPI cards ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-
-        {/* Net Exchange P&L */}
-        <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--accent)" }}>
+      {/* ── HERO: Period P&L ────────────────────────────────────────────────── */}
+      <div className="rounded-2xl overflow-hidden"
+        style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+        <div className="px-4 pt-4 pb-1 flex items-center justify-between sm:px-5 sm:pt-5">
           <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
-            Net P&L — {preset === "all" ? "all-time" : preset === "custom" ? `${fromStr} → ${toStr}` : preset.toUpperCase()}
+            Net P&amp;L · {periodLabel}
           </p>
+          <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>Exchange</span>
+        </div>
+        <div className="px-4 pb-4 sm:px-5 sm:pb-5">
           {mtdNetFlowRows.length === 0 ? (
-            <p className="mt-2.5 text-sm" style={{ color: "var(--text-3)" }}>No exchanges this month</p>
+            <div className="py-8 flex flex-col items-center gap-1 text-center">
+              <p className="text-sm" style={{ color: "var(--text-3)" }}>No exchanges in this period</p>
+              <p className="text-[11px]" style={{ color: "var(--text-4)" }}>Try a wider date range</p>
+            </div>
           ) : (
-            <div className="mt-2 flex flex-col gap-0.5">
-              {mtdNetFlowRows.slice(0, 4).map((r) => {
-                const mtd = parseFloat(r.net_flow);
+            <div className="mt-3 flex flex-col gap-3">
+              {mtdNetFlowRows.slice(0, 5).map((r, idx) => {
+                const v = parseFloat(r.net_flow);
                 const allTime = allTimeByCurrency.get(r.currency) ?? 0;
+                const isHero = idx === 0;
                 return (
-                  <div key={r.currency} className="flex items-baseline justify-between gap-2">
-                    <span
-                      className="font-[family-name:var(--font-ibm-plex-mono)] text-lg font-medium leading-tight"
-                      style={{ color: mtd >= 0 ? "var(--accent)" : "var(--red)" }}
-                    >
-                      {fmt(mtd)}
-                      <span className="ml-1 text-xs font-medium" style={{ color: "var(--text-4)" }}>{r.currency}</span>
-                    </span>
-                    <span className="text-[10px] font-mono tabular-nums shrink-0" style={{ color: "var(--text-4)" }}
-                      title="All-time">
-                      {fmt(allTimeByCurrency.get(r.currency) ?? 0)} all
+                  <div key={r.currency} className="flex items-baseline justify-between gap-3">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span
+                        className={`font-[family-name:var(--font-ibm-plex-mono)] font-medium leading-none tabular-nums ${isHero ? "text-3xl sm:text-4xl" : "text-base"}`}
+                        style={{ color: v >= 0 ? "var(--accent)" : "var(--red)" }}
+                      >
+                        {fmt(v)}
+                      </span>
+                      <span className={`font-medium ${isHero ? "text-sm" : "text-xs"}`} style={{ color: "var(--text-4)" }}>
+                        {r.currency}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono tabular-nums shrink-0 text-right" style={{ color: "var(--text-4)" }}>
+                      <span className="opacity-60">all · </span>{fmt(allTime)}
                     </span>
                   </div>
                 );
               })}
             </div>
           )}
-          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-            net inventory change · Exchange
-          </p>
         </div>
-
-        {/* MTD Exchanges */}
-        <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--indigo)" }}>
-          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Exchanges MTD</p>
-          <p className="mt-2.5 font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium leading-none" style={{ color: "var(--indigo)" }}>
-            {mtdExchangeCount.toLocaleString()}
-          </p>
-          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-            {txCount.toLocaleString()} all-time
-          </p>
-        </div>
-
-        {/* Wallets / Clients */}
-        <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--amber)" }}>
-          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Wallets / Clients</p>
-          <p className="mt-2.5 leading-none">
-            <span className="font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium" style={{ color: "var(--amber)" }}>
-              {walletCount}
-            </span>
-            <span className="mx-2 text-lg" style={{ color: "var(--text-3)", opacity: 0.4 }}>/</span>
-            <span className="font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium" style={{ color: "var(--amber)" }}>
-              {clientCount}
-            </span>
-          </p>
-          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>addresses · counterparties</p>
-        </div>
-
-        {/* Unmatched transactions */}
-        <Link
-          href="/app/transactions"
-          className="rounded-xl p-3 sm:p-4 transition-all hover:translate-y-[-1px]"
-          style={{
-            backgroundColor: "var(--surface)",
-            border: "1px solid var(--border)",
-            borderTop: `2px solid ${unmatchedCount > 0 ? "var(--red)" : "var(--text-3)"}`,
-          }}
-        >
-          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Unmatched Txs</p>
-          <p className="mt-2.5 font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium leading-none"
-            style={{ color: unmatchedCount > 0 ? "var(--red)" : "var(--text-2)" }}>
-            {unmatchedCount.toLocaleString()}
-          </p>
-          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-            {unmatchedCount === 0 ? "all matched ✓" : "need attention"}
-          </p>
-        </Link>
       </div>
+
+      {/* ── Unmatched alert (mobile only — desktop uses KPI card below) ─────── */}
+      {unmatchedCount > 0 && (
+        <Link href="/app/transactions"
+          className="sm:hidden rounded-xl flex items-center gap-3 px-4 py-3 active:opacity-70 transition-opacity"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--red) 8%, var(--surface))",
+            border: "1px solid color-mix(in srgb, var(--red) 30%, var(--border))",
+          }}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+            style={{ backgroundColor: "color-mix(in srgb, var(--red) 18%, transparent)" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+              strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--red)" }}>
+              <path d="M12 9v4M12 17h.01" />
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium" style={{ color: "var(--text-1)" }}>
+              {unmatchedCount.toLocaleString()} unmatched transaction{unmatchedCount === 1 ? "" : "s"}
+            </p>
+            <p className="text-xs" style={{ color: "var(--text-3)" }}>Need to be reviewed and tagged</p>
+          </div>
+          <span className="text-xs shrink-0" style={{ color: "var(--text-4)" }}>→</span>
+        </Link>
+      )}
 
       {/* ── Net positions ───────────────────────────────────────────────────── */}
       {netPositionRows.length > 0 && (
-        <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
-          <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:flex-wrap">
-            <div className="flex items-center gap-3">
+        <div className="rounded-xl" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="flex flex-col gap-2 px-4 pt-3 pb-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 sm:pt-4">
+            <div className="flex items-center gap-3 flex-wrap">
               <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
                 Net Positions
               </p>
@@ -357,7 +345,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               )}
             </div>
             <div className="flex items-center gap-3 flex-wrap sm:gap-4">
-              <div className="flex items-center gap-3 text-[10px]" style={{ color: "var(--text-3)" }}>
+              <div className="hidden sm:flex items-center gap-3 text-[10px]" style={{ color: "var(--text-3)" }}>
                 <span className="flex items-center gap-1">
                   <span className="inline-block w-2 h-2 rounded-sm" style={{ backgroundColor: "var(--amber)", opacity: 0.7 }} />
                   actual
@@ -370,7 +358,39 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               <NetPositionFilter asOf={asOfParam} />
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
+
+          {/* Mobile: each currency = full-width row (stacked actual/projected when differ) */}
+          <ul className="flex flex-col px-2 pb-2 sm:hidden">
+            {netPositionRows.map((pos) => {
+              const actual    = parseFloat(pos.actual);
+              const projected = parseFloat(pos.projected);
+              const hasDiff   = Math.abs(actual - projected) > 0.0001;
+              const positive  = projected >= 0;
+              return (
+                <li key={pos.currency}
+                  className="flex items-center justify-between gap-3 px-2 py-2.5"
+                  style={{ borderBottom: "1px solid var(--border)" }}>
+                  <span className="text-sm font-medium tracking-wide" style={{ color: "var(--text-2)" }}>
+                    {pos.currency}
+                  </span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="font-[family-name:var(--font-ibm-plex-mono)] text-base font-medium tabular-nums leading-none"
+                      style={{ color: positive ? "var(--accent)" : "var(--red)" }}>
+                      {fmt(projected)}
+                    </span>
+                    {hasDiff && (
+                      <span className="text-[10px] font-mono tabular-nums" style={{ color: "var(--amber)" }}>
+                        actual {fmt(actual)}
+                      </span>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Desktop: chip cluster (existing design) */}
+          <div className="hidden sm:flex flex-wrap gap-3 px-4 pb-4">
             {netPositionRows.map((pos) => {
               const actual    = parseFloat(pos.actual);
               const projected = parseFloat(pos.projected);
@@ -405,17 +425,86 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </div>
       )}
 
+      {/* ── Stats footer (mobile-only secondary metrics) ────────────────────── */}
+      <div className="grid grid-cols-3 gap-2 sm:hidden">
+        <div className="rounded-lg px-3 py-2.5"
+          style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+          <p className="font-[family-name:var(--font-ibm-plex-mono)] text-base font-medium leading-none"
+            style={{ color: "var(--indigo)" }}>{mtdExchangeCount.toLocaleString()}</p>
+          <p className="mt-1 text-[10px]" style={{ color: "var(--text-4)" }}>exch. MTD</p>
+        </div>
+        <div className="rounded-lg px-3 py-2.5"
+          style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+          <p className="font-[family-name:var(--font-ibm-plex-mono)] text-base font-medium leading-none"
+            style={{ color: "var(--amber)" }}>{walletCount}</p>
+          <p className="mt-1 text-[10px]" style={{ color: "var(--text-4)" }}>wallets</p>
+        </div>
+        <div className="rounded-lg px-3 py-2.5"
+          style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+          <p className="font-[family-name:var(--font-ibm-plex-mono)] text-base font-medium leading-none"
+            style={{ color: "var(--amber)" }}>{clientCount}</p>
+          <p className="mt-1 text-[10px]" style={{ color: "var(--text-4)" }}>clients</p>
+        </div>
+      </div>
+
+      {/* ── Desktop secondary KPI strip (hidden on mobile) ──────────────────── */}
+      <div className="hidden sm:grid grid-cols-3 gap-3">
+        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--indigo)" }}>
+          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Exchanges MTD</p>
+          <p className="mt-2.5 font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium leading-none" style={{ color: "var(--indigo)" }}>
+            {mtdExchangeCount.toLocaleString()}
+          </p>
+          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>{txCount.toLocaleString()} all-time</p>
+        </div>
+        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--amber)" }}>
+          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Wallets / Clients</p>
+          <p className="mt-2.5 leading-none">
+            <span className="font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium" style={{ color: "var(--amber)" }}>{walletCount}</span>
+            <span className="mx-2 text-lg" style={{ color: "var(--text-3)", opacity: 0.4 }}>/</span>
+            <span className="font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium" style={{ color: "var(--amber)" }}>{clientCount}</span>
+          </p>
+          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>addresses · counterparties</p>
+        </div>
+        <Link href="/app/transactions" className="rounded-xl p-4 transition-all hover:translate-y-[-1px]"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderTop: `2px solid ${unmatchedCount > 0 ? "var(--red)" : "var(--text-3)"}`,
+          }}>
+          <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Unmatched Txs</p>
+          <p className="mt-2.5 font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium leading-none"
+            style={{ color: unmatchedCount > 0 ? "var(--red)" : "var(--text-2)" }}>
+            {unmatchedCount.toLocaleString()}
+          </p>
+          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+            {unmatchedCount === 0 ? "all matched ✓" : "need attention"}
+          </p>
+        </Link>
+      </div>
+
       {/* ── Exchange Volume by currency ─────────────────────────────────────── */}
       {exchangeVolumeRows.length > 0 && (
-        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-          <div className="flex items-center justify-between px-4 py-3"
-            style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
-            <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
-              Exchange Volume
-            </p>
-            <p className="text-[10px]" style={{ color: "var(--text-3)" }}>all-time · income + outcome per currency</p>
-          </div>
-          <div className="overflow-x-auto">
+        <details className="rounded-xl overflow-hidden group" style={{ border: "1px solid var(--border)" }}>
+          <summary className="flex items-center justify-between px-4 py-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
+            style={{ backgroundColor: "var(--surface)" }}>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
+                Exchange Volume
+              </p>
+              <span className="text-[10px] sm:hidden" style={{ color: "var(--text-3)" }}>
+                {exchangeVolumeRows.length} cur.
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <p className="hidden sm:block text-[10px]" style={{ color: "var(--text-3)" }}>all-time · income + outcome per currency</p>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round" className="sm:hidden transition-transform group-open:rotate-180"
+                style={{ color: "var(--text-3)" }}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </div>
+          </summary>
+          <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
             <table className="w-full text-xs" style={{ backgroundColor: "var(--bg)" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
@@ -457,7 +546,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               </tbody>
             </table>
           </div>
-        </div>
+        </details>
       )}
 
       {/* ── Recent activity ─────────────────────────────────────────────────── */}

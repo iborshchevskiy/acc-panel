@@ -188,10 +188,32 @@ export default async function SettingsPage({ searchParams }: PageProps) {
   const fiatCurrencies   = currencyRows.filter(c => c.type === "fiat");
 
   return (
-    <div className="flex h-full" style={{ backgroundColor:"var(--bg)" }}>
+    <div className="flex flex-col md:flex-row md:h-full" style={{ backgroundColor:"var(--bg)" }}>
 
-      {/* ── Left rail ───────────────────────────────────────────────── */}
-      <aside className="w-52 shrink-0 border-r flex flex-col pt-8 pb-6 px-4 sticky top-0 h-svh overflow-y-auto"
+      {/* ── Mobile header + tab bar (md:hidden) ─────────────────────── */}
+      <div className="md:hidden sticky top-0 z-20" style={{ backgroundColor:"var(--bg)", borderBottom:"1px solid var(--surface-lo)" }}>
+        <div className="px-4 pt-4 pb-2">
+          <h1 className="text-base font-semibold text-slate-200 tracking-tight">Settings</h1>
+          <p className="text-xs mt-0.5" style={{ color:"var(--text-3)" }}>{org.name}</p>
+        </div>
+        <nav className="flex gap-1.5 px-3 pb-3 overflow-x-auto" style={{ scrollbarWidth:"none" }}>
+          {TABS.map(tab => {
+            const active = tab.id === activeTab;
+            return (
+              <a key={tab.id} href={`?tab=${tab.id}`}
+                className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors"
+                style={active
+                  ? { backgroundColor:"var(--accent)", color:"var(--surface)" }
+                  : { backgroundColor:"var(--surface)", color:"var(--text-3)", border:"1px solid var(--surface-lo)" }}>
+                {tab.label}
+              </a>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* ── Desktop left rail (hidden on mobile) ────────────────────── */}
+      <aside className="hidden md:flex w-52 shrink-0 border-r flex-col pt-8 pb-6 px-4 sticky top-0 h-svh overflow-y-auto"
         style={{ borderColor:"var(--surface-lo)", backgroundColor:"var(--bg)" }}>
 
         <div className="mb-8 px-2">
@@ -227,15 +249,15 @@ export default async function SettingsPage({ searchParams }: PageProps) {
       </aside>
 
       {/* ── Main content ────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl px-10 py-10">
+      <main className="flex-1 md:overflow-y-auto">
+        <div className="max-w-3xl px-4 py-6 md:px-10 md:py-10">
 
           {/* ── GENERAL ───────────────────────────────────────── */}
           {activeTab === "general" && (
             <section>
               <SectionLabel>Organisation</SectionLabel>
               <form action={updateOrgSettings}>
-                <div className="grid grid-cols-2 gap-x-10 gap-y-7">
+                <div className="grid grid-cols-1 gap-y-6 sm:grid-cols-2 sm:gap-x-10 sm:gap-y-7">
                   <Field label="Organisation name">
                     <UnderlineInput name="name" defaultValue={org.name} required disabled={!isAdmin} />
                   </Field>
@@ -280,7 +302,8 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               {/* member rows */}
               <div className="flex flex-col divide-y" style={{ borderColor:"var(--surface-lo)" }}>
                 {enrichedMembers.map(m => (
-                  <div key={m.id} className="flex items-center gap-4 py-3.5">
+                  <div key={m.id} className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:gap-4">
+                   <div className="flex items-center gap-3 sm:contents">
                     {/* avatar stub */}
                     <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
                       style={{ backgroundColor:"var(--surface)", color:"var(--text-3)", border:"1px solid var(--surface-lo)" }}>
@@ -295,7 +318,8 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                         {(m.acceptedAt ?? m.createdAt) ? `Joined ${new Date((m.acceptedAt ?? m.createdAt)!).toLocaleDateString()}` : ""}
                       </p>
                     </div>
-                    <div className="shrink-0 flex flex-col items-end gap-0.5">
+                   </div>
+                    <div className="shrink-0 flex flex-row items-center gap-3 sm:flex-col sm:items-end sm:gap-0.5">
                       {isAdmin && !m.isSelf ? (
                         <form action={changeMemberRole} className="flex items-center gap-2">
                           <input type="hidden" name="member_id" value={m.id} />
@@ -308,7 +332,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                       ) : (
                         <Chip role={m.role} />
                       )}
-                      <span className="text-xs max-w-[220px] text-right leading-snug" style={{ color:"var(--text-3)" }}>
+                      <span className="hidden sm:inline text-xs max-w-[220px] text-right leading-snug" style={{ color:"var(--text-3)" }}>
                         {ROLE_DESC[m.role]}
                       </span>
                     </div>
@@ -545,9 +569,9 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               {isAdmin && (
                 <div className="mt-10 pt-8 border-t" style={{ borderColor:"var(--surface-lo)" }}>
                   <SectionLabel>New type</SectionLabel>
-                  <form action={addTransactionType} className="flex items-end gap-4">
+                  <form action={addTransactionType} className="flex flex-col gap-4 sm:flex-row sm:items-end">
                     <Field label="Type name">
-                      <UnderlineInput name="name" placeholder="e.g. Staking" required maxLength={50} className="w-56" />
+                      <UnderlineInput name="name" placeholder="e.g. Staking" required maxLength={50} className="w-full sm:w-56" />
                     </Field>
                     <SaveBtn label="Add type" />
                   </form>

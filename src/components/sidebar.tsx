@@ -162,6 +162,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { hasPin, lock } = useLock();
 
@@ -186,6 +187,18 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
     if (menuOpen) document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
+
+  // Close mobile drawer on route change
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  // Lock body scroll when mobile drawer is open
+  useEffect(() => {
+    if (mobileOpen) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = prev; };
+    }
+  }, [mobileOpen]);
 
   function toggleTheme() {
     const next = theme === "dark" ? "light" : "dark";
@@ -215,8 +228,166 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
   });
 
   return (
+    <>
+    {/* ── MOBILE TOP BAR (md:hidden) ─────────────────────────────────── */}
+    <div
+      className="md:hidden fixed left-0 right-0 z-30 flex items-center h-12 px-3 gap-3"
+      style={{
+        top: "env(safe-area-inset-top, 0px)",
+        backgroundColor: "var(--bg)",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open menu"
+        className="flex items-center justify-center w-9 h-9 -ml-1.5 rounded-md active:opacity-60"
+        style={{ color: "var(--text-2)" }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M3 6h18M3 12h18M3 18h18" />
+        </svg>
+      </button>
+      <span
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold"
+        style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
+      >
+        ₿
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="truncate text-sm font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
+          {orgName ?? "AccPanel"}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Account"
+        className="flex shrink-0 items-center justify-center rounded-full text-xs font-bold w-8 h-8 active:opacity-60"
+        style={{ backgroundColor: "var(--raised-hi)", color: "var(--text-2)", border: "1px solid var(--border)" }}
+      >
+        {initial}
+      </button>
+    </div>
+
+    {/* ── MOBILE DRAWER OVERLAY (md:hidden) ──────────────────────────── */}
+    {mobileOpen && (
+      <div className="md:hidden fixed inset-0 z-50">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)" }}
+          onClick={() => setMobileOpen(false)}
+        />
+        {/* Panel */}
+        <aside
+          className="absolute left-0 top-0 bottom-0 flex flex-col"
+          style={{
+            width: "min(280px, 86vw)",
+            backgroundColor: "var(--bg)",
+            borderRight: "1px solid var(--border)",
+            paddingTop: "env(safe-area-inset-top, 0px)",
+            paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          }}
+        >
+          {/* Header */}
+          <div className="flex h-14 shrink-0 items-center px-4 gap-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <span
+              className="flex shrink-0 items-center justify-center rounded-md text-sm font-bold w-7 h-7"
+              style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
+            >
+              ₿
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="truncate text-sm font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
+                {orgName ?? "AccPanel"}
+              </p>
+              {orgName && <p className="text-[10px] leading-tight" style={{ color: "var(--text-3)" }}>organisation</p>}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+              className="flex items-center justify-center w-8 h-8 -mr-1 rounded-md active:opacity-60"
+              style={{ color: "var(--text-3)" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          {/* Nav */}
+          <nav className="flex flex-1 flex-col gap-px pt-3 px-2 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
+            {NAV_ITEMS.map((item) => {
+              const isActive =
+                pathname === item.href ||
+                (item.href !== "/app/dashboard" && pathname.startsWith(item.href));
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium"
+                  style={isActive
+                    ? { backgroundColor: "var(--accent-lo)", color: "var(--accent)", boxShadow: "inset 2px 0 0 var(--accent)" }
+                    : { color: "var(--text-3)" }}
+                >
+                  <span style={{ color: isActive ? "var(--accent)" : "var(--text-3)" }}>{item.icon}</span>
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+          {/* Footer: account actions */}
+          <div className="border-t pt-2 px-2 pb-3" style={{ borderColor: "var(--border)" }}>
+            <div className="px-3 py-2">
+              <p className="text-xs truncate" style={{ color: "var(--text-3)" }}>{userEmail}</p>
+            </div>
+            <Link
+              href="/app/settings"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm"
+              style={{ color: "var(--text-2)" }}
+            >
+              <SettingsIcon /> Settings
+            </Link>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm"
+              style={{ color: "var(--text-2)" }}
+            >
+              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+              {theme === "dark" ? "Light mode" : "Dark mode"}
+            </button>
+            {hasPin && (
+              <button
+                type="button"
+                onClick={() => { setMobileOpen(false); lock(); }}
+                className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm"
+                style={{ color: "var(--text-2)" }}
+              >
+                <LockIcon /> Lock screen
+              </button>
+            )}
+            <form action="/api/auth/signout" method="POST">
+              <button
+                type="submit"
+                className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm"
+                style={{ color: "var(--red)" }}
+              >
+                <SignOutIcon /> Sign out
+              </button>
+            </form>
+          </div>
+        </aside>
+      </div>
+    )}
+
+    {/* ── DESKTOP SIDEBAR (md:flex) ──────────────────────────────────── */}
     <aside
-      className="flex shrink-0 flex-col"
+      className="hidden md:flex shrink-0 flex-col"
       style={{
         width: collapsed ? 52 : 224,
         transition: "width 220ms cubic-bezier(0.4,0,0.2,1)",
@@ -469,5 +640,6 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
         </button>
       </div>
     </aside>
+    </>
   );
 }
