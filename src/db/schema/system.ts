@@ -4,6 +4,8 @@ import {
   text,
   boolean,
   timestamp,
+  integer,
+  jsonb,
   index,
 } from "drizzle-orm/pg-core";
 
@@ -69,6 +71,18 @@ export const pendingInvites = pgTable("pending_invites", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+});
+
+// ── User Lock Settings (per Supabase auth user) ───────────────────────────────
+// PIN hash + matrix key live in DB so they sync across browsers/devices for
+// the same account. userId is the Supabase auth.users UUID — no FK.
+
+export const userLockSettings = pgTable("user_lock_settings", {
+  userId: uuid("user_id").primaryKey(), // auth.users UUID — no FK to public.users
+  pinHash: text("pin_hash"),            // cyrb53 hash of the PIN, nullable
+  matrixKey: jsonb("matrix_key"),       // MatrixKeyData JSON, nullable
+  autolockMinutes: integer("autolock_minutes").default(0).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ── Audit Logs ────────────────────────────────────────────────────────────────

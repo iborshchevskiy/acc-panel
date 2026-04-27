@@ -6,7 +6,8 @@ import type { MatrixKeyData } from "./LockProvider";
 // ── constants ────────────────────────────────────────────────────────────────
 const GRID_COLS  = 6;
 const GRID_ROWS  = 9;
-const CELL_SIZE  = 56;   // px
+const CELL_SIZE  = 56;   // px — slot pitch
+const CIRCLE     = 44;   // px — diameter of each circle (CELL_SIZE - gap)
 const PAT        = 20;   // pattern tiles this many × this many
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ export default function MatrixKeyLock({
   // Setup mode: which cell the user tapped
   const [selectedCell, setSelectedCell] = useState<{ x: number; y: number } | null>(null);
 
-  const ptr       = useRef<{ cx: number; cy: number; ox0: number; oy0: number } | null>(null);
+  const ptr        = useRef<{ cx: number; cy: number; ox0: number; oy0: number } | null>(null);
   const hasDragged = useRef(false);
 
   // Randomise starting position each time the component mounts
@@ -79,7 +80,6 @@ export default function MatrixKeyLock({
     const dx = (e.clientX - ptr.current.cx) / CELL_SIZE;
     const dy = (e.clientY - ptr.current.cy) / CELL_SIZE;
     if (Math.abs(dx) > 0.06 || Math.abs(dy) > 0.06) hasDragged.current = true;
-    // Negate: dragging down moves numbers down (not up)
     setOx(ptr.current.ox0 - dx);
     setOy(ptr.current.oy0 - dy);
   }
@@ -104,7 +104,7 @@ export default function MatrixKeyLock({
           setStatus("error");
           setTimeout(() => setStatus("idle"), 900);
         }
-      }, 220); // wait for snap animation
+      }, 240); // wait for snap animation
     }
   }
 
@@ -129,45 +129,56 @@ export default function MatrixKeyLock({
   const tx     = -(fracX + 1) * CELL_SIZE;
   const ty     = -(fracY + 1) * CELL_SIZE;
 
-  const snappedOx    = Math.round(ox);
-  const snappedOy    = Math.round(oy);
+  // "Live" snapped offsets — update as the user drags past the half-cell mark.
+  // This lets the circles tick over to the next digit while you're still
+  // moving, instead of waiting for release.
+  const liveOx = Math.round(ox);
+  const liveOy = Math.round(oy);
+
   const selectedDigit = selectedCell !== null
-    ? dig(pattern, snappedOx + selectedCell.x, snappedOy + selectedCell.y)
+    ? dig(pattern, liveOx + selectedCell.x, liveOy + selectedCell.y)
     : null;
 
-  // ── border / glow based on status ──────────────────────────────────────────
+  // ── status colours ─────────────────────────────────────────────────────────
+  const accentColor =
+    status === "error"   ? "rgba(239,68,68,1)"
+    : status === "success" ? "rgba(16,185,129,1)"
+    : "rgba(255,255,255,0.92)";
+
   const borderColor =
-    status === "error"   ? "rgba(239,68,68,0.7)"
-    : status === "success" ? "rgba(16,185,129,0.7)"
-    : "rgba(255,255,255,0.08)";
+    status === "error"   ? "rgba(239,68,68,0.55)"
+    : status === "success" ? "rgba(16,185,129,0.55)"
+    : "rgba(255,255,255,0.06)";
   const glowColor =
-    status === "error"   ? "rgba(239,68,68,0.2)"
-    : status === "success" ? "rgba(16,185,129,0.2)"
+    status === "error"   ? "rgba(239,68,68,0.18)"
+    : status === "success" ? "rgba(16,185,129,0.22)"
     : "transparent";
 
   return (
     <div className="flex flex-col items-center gap-5">
       {/* Instruction line */}
       <p className="text-xs text-center leading-relaxed"
-        style={{ color: "var(--text-4)", maxWidth: 300 }}>
+        style={{ color: "var(--text-4)", maxWidth: 320 }}>
         {mode === "setup"
-          ? "Slide the grid, then tap a cell — that digit + position becomes your key."
-          : "Slide until your digit is at your position, then release."}
+          ? "Drag the digit field, then tap a circle — that digit + position becomes your key."
+          : "Drag until your digit lands in your circle, then release."}
       </p>
 
-      {/* ── Grid ─────────────────────────────────────────────────────────── */}
+      {/* ── Grid container ────────────────────────────────────────────────── */}
       <div
-        className="relative"
+        className="relative select-none"
         style={{
           width:  GRID_COLS * CELL_SIZE,
           height: GRID_ROWS * CELL_SIZE,
           overflow: "hidden",
-          borderRadius: 16,
+          borderRadius: 20,
           border: `1px solid ${borderColor}`,
-          boxShadow: `0 0 32px ${glowColor}, 0 8px 32px rgba(0,0,0,0.5)`,
+          boxShadow: `0 0 32px ${glowColor}, 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)`,
           cursor: dragging ? "grabbing" : "grab",
+          background: "radial-gradient(ellipse at center, rgba(255,255,255,0.015), transparent 70%), var(--bg)",
           transition: "border-color 0.3s, box-shadow 0.3s",
           animation: status === "error" ? "mkShake 0.5s ease-in-out" : undefined,
+          touchAction: "none",
         }}
         onPointerDown={onPtrDown}
         onPointerMove={onPtrMove}
@@ -175,78 +186,125 @@ export default function MatrixKeyLock({
         onPointerCancel={onPtrUp}
         onClick={onContainerClick}
       >
-        {/* Tile layer */}
+        {/* ── Layer 1: scrolling background pattern (dim, ambient) ─────────── */}
         <div
+          aria-hidden
           style={{
             position: "absolute",
             display: "grid",
             gridTemplateColumns: `repeat(${rCols}, ${CELL_SIZE}px)`,
             transform: `translate(${tx}px, ${ty}px)`,
-            transition: dragging ? "none" : "transform 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+            transition: dragging ? "none" : "transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1)",
             willChange: "transform",
+            pointerEvents: "none",
           }}
         >
           {Array.from({ length: rRows * rCols }, (_, i) => {
-            const c      = i % rCols;
-            const r      = Math.floor(i / rCols);
-            const visCol = c - 1;
-            const visRow = r - 1;
-            const inGrid = visCol >= 0 && visCol < GRID_COLS && visRow >= 0 && visRow < GRID_ROWS;
-            const d      = dig(pattern, floorX + c - 1, floorY + r - 1);
-
-            const isSelected = inGrid && mode === "setup" &&
-              selectedCell?.x === visCol && selectedCell?.y === visRow;
-
-            const digitColor =
-              status === "error"    ? "rgba(239,68,68,0.85)"
-              : status === "success"  ? "rgba(16,185,129,0.85)"
-              : isSelected          ? "rgba(16,185,129,1)"
-              : "rgba(255,255,255,0.62)";
-
+            const c = i % rCols;
+            const r = Math.floor(i / rCols);
+            const d = dig(pattern, floorX + c - 1, floorY + r - 1);
             return (
-              <div
-                key={i}
+              <div key={i}
                 style={{
                   width: CELL_SIZE, height: CELL_SIZE,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  position: "relative",
-                  backgroundColor: isSelected ? "rgba(16,185,129,0.08)" : "transparent",
-                  borderRight:  "0.5px solid rgba(255,255,255,0.05)",
-                  borderBottom: "0.5px solid rgba(255,255,255,0.05)",
-                }}
-              >
-                {/* The digit */}
+                }}>
                 <span style={{
-                  fontSize: 24, fontWeight: 700,
+                  fontSize: 17, fontWeight: 500,
                   fontFamily: "var(--font-ibm-plex-mono, monospace)",
-                  lineHeight: 1, color: digitColor,
-                  textShadow: isSelected
-                    ? "0 0 14px rgba(16,185,129,0.7), 0 0 28px rgba(16,185,129,0.3)"
-                    : "none",
-                  pointerEvents: "none", userSelect: "none",
-                  transition: "color 0.3s",
+                  lineHeight: 1, color: "rgba(255,255,255,0.10)",
+                  userSelect: "none",
                 }}>
                   {d}
                 </span>
+              </div>
+            );
+          })}
+        </div>
 
-                {/* Selected cell ring (setup) */}
-                {isSelected && (
-                  <div style={{
-                    position: "absolute", inset: 3, borderRadius: 10,
-                    border: "1.5px solid rgba(16,185,129,0.55)",
-                    pointerEvents: "none",
-                    boxShadow: "0 0 12px rgba(16,185,129,0.15), inset 0 0 8px rgba(16,185,129,0.05)",
-                  }} />
-                )}
+        {/* ── Layer 2: foreground circles (fixed positions) ─────────────────── */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute", inset: 0,
+            display: "grid",
+            gridTemplateColumns: `repeat(${GRID_COLS}, ${CELL_SIZE}px)`,
+            gridAutoRows: `${CELL_SIZE}px`,
+            pointerEvents: "none",
+          }}
+        >
+          {Array.from({ length: GRID_ROWS * GRID_COLS }, (_, i) => {
+            const col = i % GRID_COLS;
+            const row = Math.floor(i / GRID_COLS);
+            const d   = dig(pattern, liveOx + col, liveOy + row);
+            const isSelected = mode === "setup" &&
+              selectedCell?.x === col && selectedCell?.y === row;
+
+            const circleBorder =
+              status === "error"   ? "rgba(239,68,68,0.45)"
+              : status === "success" ? "rgba(16,185,129,0.55)"
+              : isSelected         ? "rgba(16,185,129,0.65)"
+              : "rgba(255,255,255,0.10)";
+
+            const circleBg =
+              isSelected            ? "rgba(16,185,129,0.10)"
+              : status === "error"  ? "rgba(239,68,68,0.06)"
+              : status === "success" ? "rgba(16,185,129,0.06)"
+              : "rgba(255,255,255,0.025)";
+
+            const digitColor =
+              isSelected            ? "rgba(16,185,129,1)"
+              : status === "error"  ? "rgba(239,68,68,1)"
+              : status === "success" ? "rgba(16,185,129,1)"
+              : accentColor;
+
+            const digitShadow = isSelected
+              ? "0 0 14px rgba(16,185,129,0.55), 0 0 28px rgba(16,185,129,0.25)"
+              : status === "success"
+              ? "0 0 14px rgba(16,185,129,0.45)"
+              : status === "error"
+              ? "0 0 14px rgba(239,68,68,0.4)"
+              : "none";
+
+            return (
+              <div key={i}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                <div
+                  style={{
+                    width: CIRCLE, height: CIRCLE,
+                    borderRadius: "50%",
+                    background: circleBg,
+                    border: `1.5px solid ${circleBorder}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: isSelected
+                      ? "0 0 0 1px rgba(16,185,129,0.18), inset 0 0 12px rgba(16,185,129,0.06)"
+                      : "inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.25)",
+                    transition: "background-color 0.18s, border-color 0.18s, box-shadow 0.25s",
+                  }}
+                >
+                  <span style={{
+                    fontSize: 20, fontWeight: 600,
+                    fontFamily: "var(--font-ibm-plex-mono, monospace)",
+                    lineHeight: 1,
+                    color: digitColor,
+                    textShadow: digitShadow,
+                    transition: "color 0.18s, text-shadow 0.25s",
+                    fontVariantNumeric: "tabular-nums",
+                  }}>
+                    {d}
+                  </span>
+                </div>
               </div>
             );
           })}
         </div>
 
         {/* Vignette */}
-        <div style={{
+        <div aria-hidden style={{
           position: "absolute", inset: 0, pointerEvents: "none",
-          background: "radial-gradient(ellipse 85% 85% at 50% 50%, transparent 55%, rgba(0,0,0,0.45) 100%)",
+          background: "radial-gradient(ellipse 90% 90% at 50% 50%, transparent 60%, rgba(0,0,0,0.35) 100%)",
         }} />
       </div>
 
@@ -273,18 +331,18 @@ export default function MatrixKeyLock({
             <strong style={{ color: "var(--text-2)" }}>{selectedCell.x}</strong>,
             row{" "}
             <strong style={{ color: "var(--text-2)" }}>{selectedCell.y}</strong>.
-            You can still slide to pick a different digit.
+            You can still drag to pick a different digit.
           </p>
 
           <div className="flex gap-3 items-center">
             <button
               type="button"
               onClick={() => onSave?.({
-                secretNumber: dig(pattern, snappedOx + selectedCell.x, snappedOy + selectedCell.y),
+                secretNumber: dig(pattern, liveOx + selectedCell.x, liveOy + selectedCell.y),
                 secretCell: selectedCell,
                 pattern,
               })}
-              className="h-7 rounded px-4 text-xs font-medium transition-opacity hover:opacity-80"
+              className="h-8 rounded-md px-4 text-xs font-medium transition-opacity hover:opacity-80"
               style={{ backgroundColor: "var(--green-btn-bg)", color: "var(--accent)", border: "1px solid var(--green-btn-border)" }}
             >
               Save key
