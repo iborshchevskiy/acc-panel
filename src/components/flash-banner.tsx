@@ -31,7 +31,7 @@ export default function FlashBanner() {
 
   return (
     <div
-      className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl px-4 py-3 text-sm shadow-2xl transition-all"
+      className="fixed left-3 right-3 bottom-[calc(env(safe-area-inset-bottom,0px)+66px)] z-50 flex items-center gap-3 rounded-xl px-4 py-3 text-sm shadow-2xl transition-all md:left-auto md:right-6 md:bottom-6"
       style={ok
         ? { backgroundColor: "var(--green-chip-bg)", border: "1px solid rgba(16,185,129,0.3)", color: "var(--accent)" }
         : { backgroundColor: "var(--red-chip-bg)", border: "1px solid rgba(239,68,68,0.3)", color: "var(--red)" }}>

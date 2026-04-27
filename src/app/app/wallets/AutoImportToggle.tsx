@@ -217,7 +217,7 @@ export default function AutoImportToggle({ walletId, initialEnabled, initialInte
   }
 
   return (
-    <div className="flex items-center gap-2" style={{ minWidth: "220px" }}>
+    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:min-w-[220px]">
       {/* Toggle switch */}
       <button type="button" onClick={handleToggle} disabled={isPending}
         title={enabled ? "Disable auto-import" : "Enable auto-import"}

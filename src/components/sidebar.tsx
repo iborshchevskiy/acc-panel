@@ -227,161 +227,159 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
     ...extra,
   });
 
+  // Mobile bottom tab bar — top 4 most-used + "More" sheet for the rest
+  const PRIMARY_TABS = NAV_ITEMS.slice(0, 4); // Dashboard, Transactions, Wallets, Clients
+  const SECONDARY_TABS = NAV_ITEMS.slice(4);  // Expenses, Analytics, FIFO, Debts, Capital, Data
+  const moreActive = SECONDARY_TABS.some(item =>
+    pathname === item.href || (item.href !== "/app/dashboard" && pathname.startsWith(item.href))
+  ) || pathname.startsWith("/app/settings");
+
   return (
     <>
-    {/* ── MOBILE TOP BAR (md:hidden) ─────────────────────────────────── */}
-    <div
-      className="md:hidden fixed left-0 right-0 z-30 flex items-center h-12 px-3 gap-3"
+    {/* ── MOBILE BOTTOM TAB BAR (md:hidden) ──────────────────────────── */}
+    <nav
+      className="md:hidden fixed left-0 right-0 bottom-0 z-30 flex items-stretch"
       style={{
-        top: "env(safe-area-inset-top, 0px)",
         backgroundColor: "var(--bg)",
-        borderBottom: "1px solid var(--border)",
+        borderTop: "1px solid var(--border)",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
+      {PRIMARY_TABS.map(item => {
+        const isActive = pathname === item.href ||
+          (item.href !== "/app/dashboard" && pathname.startsWith(item.href));
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex-1 flex flex-col items-center justify-center gap-1 py-2 active:opacity-60"
+            style={{ color: isActive ? "var(--accent)" : "var(--text-3)" }}
+          >
+            <span style={{ color: isActive ? "var(--accent)" : "var(--text-3)" }}>{item.icon}</span>
+            <span className="text-[10px] leading-none font-medium">{item.label}</span>
+          </Link>
+        );
+      })}
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
-        aria-label="Open menu"
-        className="flex items-center justify-center w-9 h-9 -ml-1.5 rounded-md active:opacity-60"
-        style={{ color: "var(--text-2)" }}
+        aria-label="More"
+        className="flex-1 flex flex-col items-center justify-center gap-1 py-2 active:opacity-60"
+        style={{ color: moreActive ? "var(--accent)" : "var(--text-3)" }}
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M3 6h18M3 12h18M3 18h18" />
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="3" cy="8" r="1.4" fill="currentColor"/>
+          <circle cx="8" cy="8" r="1.4" fill="currentColor"/>
+          <circle cx="13" cy="8" r="1.4" fill="currentColor"/>
         </svg>
+        <span className="text-[10px] leading-none font-medium">More</span>
       </button>
-      <span
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold"
-        style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
-      >
-        ₿
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className="truncate text-sm font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
-          {orgName ?? "AccPanel"}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={() => setMobileOpen(true)}
-        aria-label="Account"
-        className="flex shrink-0 items-center justify-center rounded-full text-xs font-bold w-8 h-8 active:opacity-60"
-        style={{ backgroundColor: "var(--raised-hi)", color: "var(--text-2)", border: "1px solid var(--border)" }}
-      >
-        {initial}
-      </button>
-    </div>
+    </nav>
 
-    {/* ── MOBILE DRAWER OVERLAY (md:hidden) ──────────────────────────── */}
+    {/* ── MOBILE "MORE" SHEET (md:hidden) ────────────────────────────── */}
     {mobileOpen && (
       <div className="md:hidden fixed inset-0 z-50">
-        {/* Backdrop */}
         <div
           className="absolute inset-0"
-          style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)" }}
+          style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)" }}
           onClick={() => setMobileOpen(false)}
         />
-        {/* Panel */}
-        <aside
-          className="absolute left-0 top-0 bottom-0 flex flex-col"
+        <div
+          className="absolute left-0 right-0 bottom-0 rounded-t-2xl flex flex-col max-h-[85vh]"
           style={{
-            width: "min(280px, 86vw)",
             backgroundColor: "var(--bg)",
-            borderRight: "1px solid var(--border)",
-            paddingTop: "env(safe-area-inset-top, 0px)",
+            borderTop: "1px solid var(--border)",
             paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            boxShadow: "0 -8px 32px rgba(0,0,0,0.4)",
           }}
         >
-          {/* Header */}
-          <div className="flex h-14 shrink-0 items-center px-4 gap-3" style={{ borderBottom: "1px solid var(--border)" }}>
+          {/* Drag handle */}
+          <div className="flex justify-center py-2.5 shrink-0">
+            <span className="block w-10 h-1 rounded-full" style={{ backgroundColor: "var(--text-4)", opacity: 0.4 }} />
+          </div>
+
+          {/* Header: org */}
+          <div className="px-5 pb-3 flex items-center gap-3 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
             <span
-              className="flex shrink-0 items-center justify-center rounded-md text-sm font-bold w-7 h-7"
+              className="flex shrink-0 items-center justify-center rounded-md text-sm font-bold w-8 h-8"
               style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
             >
               ₿
             </span>
             <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
+              <p className="truncate text-sm font-semibold" style={{ color: "var(--text-1)" }}>
                 {orgName ?? "AccPanel"}
               </p>
-              {orgName && <p className="text-[10px] leading-tight" style={{ color: "var(--text-3)" }}>organisation</p>}
+              <p className="truncate text-[11px]" style={{ color: "var(--text-3)" }}>{userEmail}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Close menu"
-              className="flex items-center justify-center w-8 h-8 -mr-1 rounded-md active:opacity-60"
-              style={{ color: "var(--text-3)" }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
           </div>
-          {/* Nav */}
-          <nav className="flex flex-1 flex-col gap-px pt-3 px-2 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
-            {NAV_ITEMS.map((item) => {
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/app/dashboard" && pathname.startsWith(item.href));
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium"
-                  style={isActive
-                    ? { backgroundColor: "var(--accent-lo)", color: "var(--accent)", boxShadow: "inset 2px 0 0 var(--accent)" }
-                    : { color: "var(--text-3)" }}
-                >
-                  <span style={{ color: isActive ? "var(--accent)" : "var(--text-3)" }}>{item.icon}</span>
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-          {/* Footer: account actions */}
-          <div className="border-t pt-2 px-2 pb-3" style={{ borderColor: "var(--border)" }}>
-            <div className="px-3 py-2">
-              <p className="text-xs truncate" style={{ color: "var(--text-3)" }}>{userEmail}</p>
-            </div>
-            <Link
-              href="/app/settings"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm"
-              style={{ color: "var(--text-2)" }}
-            >
-              <SettingsIcon /> Settings
-            </Link>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm"
-              style={{ color: "var(--text-2)" }}
-            >
-              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-              {theme === "dark" ? "Light mode" : "Dark mode"}
-            </button>
-            {hasPin && (
+
+          {/* Scrollable content */}
+          <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
+            {/* Secondary nav */}
+            <nav className="grid grid-cols-3 gap-1 px-3 pt-3">
+              {SECONDARY_TABS.map(item => {
+                const isActive = pathname === item.href || pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-lg active:opacity-70"
+                    style={isActive
+                      ? { backgroundColor: "var(--accent-lo)", color: "var(--accent)" }
+                      : { backgroundColor: "var(--surface)", color: "var(--text-2)", border: "1px solid var(--surface-lo)" }}
+                  >
+                    <span style={{ color: isActive ? "var(--accent)" : "var(--text-3)" }}>{item.icon}</span>
+                    <span className="text-[11px] font-medium">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+
+            {/* Account actions */}
+            <div className="border-t mt-4 pt-2 px-2 pb-3" style={{ borderColor: "var(--border)" }}>
+              <Link
+                href="/app/settings"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-3 py-3 rounded-md text-sm"
+                style={pathname.startsWith("/app/settings")
+                  ? { backgroundColor: "var(--accent-lo)", color: "var(--accent)" }
+                  : { color: "var(--text-2)" }}
+              >
+                <SettingsIcon /> Settings
+              </Link>
               <button
                 type="button"
-                onClick={() => { setMobileOpen(false); lock(); }}
-                className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm"
+                onClick={toggleTheme}
+                className="flex items-center gap-3 w-full px-3 py-3 rounded-md text-sm"
                 style={{ color: "var(--text-2)" }}
               >
-                <LockIcon /> Lock screen
+                {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+                {theme === "dark" ? "Light mode" : "Dark mode"}
               </button>
-            )}
-            <form action="/api/auth/signout" method="POST">
-              <button
-                type="submit"
-                className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm"
-                style={{ color: "var(--red)" }}
-              >
-                <SignOutIcon /> Sign out
-              </button>
-            </form>
+              {hasPin && (
+                <button
+                  type="button"
+                  onClick={() => { setMobileOpen(false); lock(); }}
+                  className="flex items-center gap-3 w-full px-3 py-3 rounded-md text-sm"
+                  style={{ color: "var(--text-2)" }}
+                >
+                  <LockIcon /> Lock screen
+                </button>
+              )}
+              <form action="/api/auth/signout" method="POST">
+                <button
+                  type="submit"
+                  className="flex items-center gap-3 w-full px-3 py-3 rounded-md text-sm"
+                  style={{ color: "var(--red)" }}
+                >
+                  <SignOutIcon /> Sign out
+                </button>
+              </form>
+            </div>
           </div>
-        </aside>
+        </div>
       </div>
     )}
 
