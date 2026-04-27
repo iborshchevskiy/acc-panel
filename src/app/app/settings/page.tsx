@@ -10,6 +10,7 @@ import {
   addTransactionType, editTransactionType, deleteTransactionType,
 } from "./actions";
 import SecurityTab from "./SecurityTab";
+import CopyButton from "@/components/copy-button";
 
 interface PageProps { searchParams: Promise<{ tab?: string; auditPage?: string }> }
 
@@ -326,25 +327,33 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                 <div className="mt-10">
                   <SectionLabel>Pending invites</SectionLabel>
                   <div className="flex flex-col gap-2">
-                    {invites.map(inv => (
-                      <div key={inv.id} className="flex items-center gap-4 px-4 py-3 rounded-lg"
-                        style={{ backgroundColor:"var(--surface)", border:"1px solid var(--surface-lo)" }}>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-slate-400">{inv.email}</p>
-                          <p className="text-xs mt-0.5 font-mono truncate" style={{ color:"var(--inner-border)" }}>
-                            {`${siteUrl}/invite/${inv.token}`}
-                          </p>
+                    {invites.map(inv => {
+                      const url = `${siteUrl}/invite/${inv.token}`;
+                      return (
+                        <div key={inv.id} className="flex flex-col gap-3 px-4 py-3 rounded-lg sm:flex-row sm:items-center sm:gap-4"
+                          style={{ backgroundColor:"var(--surface)", border:"1px solid var(--surface-lo)" }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-xs text-slate-400">{inv.email}</p>
+                              <Chip role={inv.role} />
+                              <span className="text-xs" style={{ color:"var(--text-3)" }}>
+                                exp. {new Date(inv.expiresAt).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <p className="text-xs mt-1 font-mono truncate" style={{ color:"var(--inner-border)" }}>
+                              {url}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <CopyButton value={url} label="Copy link" />
+                            <form action={cancelInvite}>
+                              <input type="hidden" name="invite_id" value={inv.id} />
+                              <GhostBtn label="Cancel" danger />
+                            </form>
+                          </div>
                         </div>
-                        <Chip role={inv.role} />
-                        <span className="text-xs shrink-0" style={{ color:"var(--text-3)" }}>
-                          exp. {new Date(inv.expiresAt).toLocaleDateString()}
-                        </span>
-                        <form action={cancelInvite}>
-                          <input type="hidden" name="invite_id" value={inv.id} />
-                          <GhostBtn label="Cancel" danger />
-                        </form>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

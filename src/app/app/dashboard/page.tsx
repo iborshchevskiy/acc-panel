@@ -233,10 +233,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   };
 
   return (
-    <div className="flex flex-col gap-5 p-6">
+    <div className="flex flex-col gap-4 p-3 sm:gap-5 sm:p-6">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <h1 className="text-lg font-semibold" style={{ color: "var(--text-1)" }}>
             {org?.name ?? "Dashboard"}
@@ -245,7 +245,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             {monthName} {now.getUTCFullYear()} · {txCount.toLocaleString()} transactions
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap sm:gap-3 sm:justify-end">
           <DashboardFilters from={fromStr} to={toStr} preset={preset} />
           <Link
             href="/app/analytics"
@@ -258,10 +258,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       </div>
 
       {/* ── KPI cards ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
 
         {/* Net Exchange P&L */}
-        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--accent)" }}>
+        <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--accent)" }}>
           <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
             Net P&L — {preset === "all" ? "all-time" : preset === "custom" ? `${fromStr} → ${toStr}` : preset.toUpperCase()}
           </p>
@@ -296,7 +296,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </div>
 
         {/* MTD Exchanges */}
-        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--indigo)" }}>
+        <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--indigo)" }}>
           <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Exchanges MTD</p>
           <p className="mt-2.5 font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium leading-none" style={{ color: "var(--indigo)" }}>
             {mtdExchangeCount.toLocaleString()}
@@ -307,7 +307,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </div>
 
         {/* Wallets / Clients */}
-        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--amber)" }}>
+        <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: "2px solid var(--amber)" }}>
           <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Wallets / Clients</p>
           <p className="mt-2.5 leading-none">
             <span className="font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium" style={{ color: "var(--amber)" }}>
@@ -324,7 +324,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         {/* Unmatched transactions */}
         <Link
           href="/app/transactions"
-          className="rounded-xl p-4 transition-all hover:translate-y-[-1px]"
+          className="rounded-xl p-3 sm:p-4 transition-all hover:translate-y-[-1px]"
           style={{
             backgroundColor: "var(--surface)",
             border: "1px solid var(--border)",
@@ -344,8 +344,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
       {/* ── Net positions ───────────────────────────────────────────────────── */}
       {netPositionRows.length > 0 && (
-        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
-          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:flex-wrap">
             <div className="flex items-center gap-3">
               <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
                 Net Positions
@@ -356,7 +356,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 flex-wrap sm:gap-4">
               <div className="flex items-center gap-3 text-[10px]" style={{ color: "var(--text-3)" }}>
                 <span className="flex items-center gap-1">
                   <span className="inline-block w-2 h-2 rounded-sm" style={{ backgroundColor: "var(--amber)", opacity: 0.7 }} />
@@ -472,49 +472,95 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               View all →
             </Link>
           </div>
-          <table className="w-full text-sm" style={{ backgroundColor: "var(--bg)" }}>
-            <tbody>
-              {recent.map((tx, i) => {
-                const legs = legsByTx.get(tx.id) ?? [];
-                const inLeg  = legs.find((l) => l.direction === "in");
-                const outLeg = legs.find((l) => l.direction === "out");
-                const typeColor = tx.transactionType
-                  ? (TYPE_COLORS[tx.transactionType] ?? "var(--text-2)")
-                  : "var(--text-2)";
-                return (
-                  <tr key={tx.id} style={{ borderBottom: i < recent.length - 1 ? "1px solid var(--border)" : "none" }}>
-                    <td className="px-4 py-3 text-xs font-mono whitespace-nowrap" style={{ color: "var(--text-3)", width: "140px" }}>
-                      {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
-                    </td>
-                    <td className="px-4 py-3" style={{ width: "120px" }}>
+
+          {/* Mobile: card list */}
+          <ul className="flex flex-col sm:hidden" style={{ backgroundColor: "var(--bg)" }}>
+            {recent.map((tx, i) => {
+              const legs = legsByTx.get(tx.id) ?? [];
+              const inLeg  = legs.find((l) => l.direction === "in");
+              const outLeg = legs.find((l) => l.direction === "out");
+              const typeColor = tx.transactionType
+                ? (TYPE_COLORS[tx.transactionType] ?? "var(--text-2)")
+                : "var(--text-2)";
+              return (
+                <li key={tx.id}
+                  style={{ borderBottom: i < recent.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <Link href="/app/transactions" className="flex flex-col gap-1.5 px-3 py-3 active:opacity-70">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-mono" style={{ color: "var(--text-3)" }}>
+                        {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
+                      </span>
                       {tx.transactionType && (
-                        <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium"
+                        <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium shrink-0"
                           style={{ backgroundColor: typeColor + "22", color: typeColor }}>
                           {tx.transactionType}
                         </span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono">
+                    </div>
+                    <div className="text-xs font-mono leading-snug">
                       {inLeg && (
-                        <span style={{ color: "var(--accent)" }}>
+                        <div style={{ color: "var(--accent)" }}>
                           +{Number(inLeg.amount).toLocaleString(undefined, { maximumFractionDigits: 4 })} {inLeg.currency}
-                        </span>
+                        </div>
                       )}
-                      {inLeg && outLeg && <span className="mx-1.5" style={{ color: "var(--text-3)" }}>·</span>}
                       {outLeg && (
-                        <span style={{ color: "var(--red)" }}>
+                        <div style={{ color: "var(--red)" }}>
                           -{Number(outLeg.amount).toLocaleString(undefined, { maximumFractionDigits: 4 })} {outLeg.currency}
-                        </span>
+                        </div>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-right w-8">
-                      <Link href="/app/transactions" className="text-[10px] transition-colors" style={{ color: "var(--text-3)" }}>→</Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Desktop / tablet: table */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-sm" style={{ backgroundColor: "var(--bg)" }}>
+              <tbody>
+                {recent.map((tx, i) => {
+                  const legs = legsByTx.get(tx.id) ?? [];
+                  const inLeg  = legs.find((l) => l.direction === "in");
+                  const outLeg = legs.find((l) => l.direction === "out");
+                  const typeColor = tx.transactionType
+                    ? (TYPE_COLORS[tx.transactionType] ?? "var(--text-2)")
+                    : "var(--text-2)";
+                  return (
+                    <tr key={tx.id} style={{ borderBottom: i < recent.length - 1 ? "1px solid var(--border)" : "none" }}>
+                      <td className="px-4 py-3 text-xs font-mono whitespace-nowrap" style={{ color: "var(--text-3)", width: "140px" }}>
+                        {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
+                      </td>
+                      <td className="px-4 py-3" style={{ width: "120px" }}>
+                        {tx.transactionType && (
+                          <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium"
+                            style={{ backgroundColor: typeColor + "22", color: typeColor }}>
+                            {tx.transactionType}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs font-mono">
+                        {inLeg && (
+                          <span style={{ color: "var(--accent)" }}>
+                            +{Number(inLeg.amount).toLocaleString(undefined, { maximumFractionDigits: 4 })} {inLeg.currency}
+                          </span>
+                        )}
+                        {inLeg && outLeg && <span className="mx-1.5" style={{ color: "var(--text-3)" }}>·</span>}
+                        {outLeg && (
+                          <span style={{ color: "var(--red)" }}>
+                            -{Number(outLeg.amount).toLocaleString(undefined, { maximumFractionDigits: 4 })} {outLeg.currency}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right w-8">
+                        <Link href="/app/transactions" className="text-[10px] transition-colors" style={{ color: "var(--text-3)" }}>→</Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
