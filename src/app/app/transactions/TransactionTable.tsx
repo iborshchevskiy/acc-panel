@@ -748,21 +748,12 @@ function InlineEditForm({ tx, legRows, txTypes, currencyCodes, orgClients, onClo
   orgClients: ClientOption[];
   onClose: () => void;
 }) {
+  // ── ALL HOOKS MUST BE CALLED UNCONDITIONALLY ──────────────────────────
+  // The `mode` toggle below switches between rendering this form and the
+  // SplitForm. If we early-returned BEFORE these state/effect hooks the
+  // hook count would change between renders → React error #300.
   const [mode, setMode] = useState<"edit" | "split">("edit");
   const [state, action, pending] = useActionState(updateTransaction, null);
-
-  if (mode === "split") {
-    return (
-      <SplitForm
-        txId={tx.id}
-        originalLegs={legRows.map(l => ({ direction: l.direction, amount: l.amount, currency: l.currency, location: l.location }))}
-        txTypes={txTypes}
-        currencyCodes={currencyCodes}
-        orgClients={orgClients}
-        onCancel={() => setMode("edit")}
-      />
-    );
-  }
 
   const toLocalIso = (iso: string) => {
     const d = new Date(iso);
@@ -780,6 +771,20 @@ function InlineEditForm({ tx, legRows, txTypes, currencyCodes, orgClients, onClo
   const [outLegs, setOutLegs] = useState<EditLeg[]>(() => mkLeg("out"));
 
   useEffect(() => { if (state?.success) onClose(); }, [state?.success, onClose]);
+
+  // ─── Conditional render comes AFTER all hooks ────────────────────────
+  if (mode === "split") {
+    return (
+      <SplitForm
+        txId={tx.id}
+        originalLegs={legRows.map(l => ({ direction: l.direction, amount: l.amount, currency: l.currency, location: l.location }))}
+        txTypes={txTypes}
+        currencyCodes={currencyCodes}
+        orgClients={orgClients}
+        onCancel={() => setMode("edit")}
+      />
+    );
+  }
 
   function updLeg(list: EditLeg[], set: (l: EditLeg[]) => void, i: number, f: keyof EditLeg, v: string) {
     const next = [...list]; next[i] = { ...next[i], [f]: v }; set(next);
