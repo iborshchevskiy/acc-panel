@@ -47,11 +47,34 @@ function dirColor(d: string) {
   return d === "in" ? "var(--accent)" : d === "out" ? "var(--red)" : "var(--violet)";
 }
 
+/** Tolerant amount parser — accepts "1234.56", "1234,56", "1 234.56", "1.234,56".
+ *  We strip thousand separators heuristically; the LAST `,` or `.` is treated
+ *  as the decimal mark.  Empty / non-numeric → NaN. */
+function parseAmount(raw: string): number {
+  if (!raw) return NaN;
+  const s = raw.replace(/\s/g, "");
+  // Find the rightmost separator and treat it as decimal.
+  const lastDot = s.lastIndexOf(".");
+  const lastComma = s.lastIndexOf(",");
+  let normalized = s;
+  if (lastComma > lastDot) {
+    // Comma is the decimal mark; remove dots (thousand separators), swap comma → dot.
+    normalized = s.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot > lastComma) {
+    // Dot is the decimal mark; remove commas (thousand separators).
+    normalized = s.replace(/,/g, "");
+  } else {
+    // No separators; strip any thousand-style commas just in case.
+    normalized = s.replace(/,/g, "");
+  }
+  return Number(normalized);
+}
+
 /** Build a Map<key=`${dir}|${ccyUpper}`, totalAmount>. */
 function totalsByDirCcy(legs: { direction: string; amount: string | null; currency: string | null }[]): Map<string, number> {
   const m = new Map<string, number>();
   for (const l of legs) {
-    const a = l.amount ? Number(l.amount) : 0;
+    const a = l.amount ? parseAmount(l.amount) : 0;
     if (!l.currency || !Number.isFinite(a) || a === 0) continue;
     const k = `${l.direction}|${l.currency.toUpperCase()}`;
     m.set(k, (m.get(k) ?? 0) + a);
@@ -124,7 +147,7 @@ export default function SplitForm({
     const m = new Map<string, number>();
     for (const p of parts) {
       for (const l of p.legs) {
-        const a = Number(l.amount);
+        const a = parseAmount(l.amount);
         if (!l.currency || !Number.isFinite(a) || a === 0) continue;
         const k = `${l.direction}|${l.currency.toUpperCase()}`;
         m.set(k, (m.get(k) ?? 0) + a);
@@ -149,20 +172,32 @@ export default function SplitForm({
     });
   }, [originalTotals, allocated]);
 
-  const allBalanced = allocationRows.every(r => Math.abs(r.remaining) < 1e-9 && r.target > 0);
+  // Balanced when EVERY (dir, ccy) bucket has remaining ≈ 0. Both the
+  // original buckets (target > 0) and any new buckets the user introduced
+  // (target = 0, must net to 0 too) are checked the same way.
+  const unbalancedRows = allocationRows.filter(r => Math.abs(r.remaining) >= 1e-9);
+  const allBalanced = allocationRows.length > 0 && unbalancedRows.length === 0;
 
   // Close form on success
   useEffect(() => { if (state?.success) onCancel(); }, [state?.success, onCancel]);
 
-  // Build the JSON payload
+  // Build the JSON payload — server expects normalized decimal-dot amounts.
   const partsJson = useMemo(() => JSON.stringify(parts.map(p => ({
     transactionType: p.transactionType || null,
     status: p.status || null,
     comment: p.comment || null,
     clientId: p.clientId,
     legs: p.legs
-      .filter(l => l.amount && l.currency && Number(l.amount) !== 0)
-      .map(l => ({ direction: l.direction, amount: l.amount, currency: l.currency.toUpperCase(), location: l.location || null })),
+      .filter(l => {
+        const a = parseAmount(l.amount);
+        return l.currency && Number.isFinite(a) && a !== 0;
+      })
+      .map(l => ({
+        direction: l.direction,
+        amount: String(parseAmount(l.amount)), // normalized "123.45"
+        currency: l.currency.toUpperCase(),
+        location: l.location || null,
+      })),
   }))), [parts]);
 
   return (
@@ -234,6 +269,38 @@ export default function SplitForm({
         ))}
       </div>
 
+      {/* Inline diagnostic — explicitly tells the user why Apply is disabled. */}
+      {!allBalanced && unbalancedRows.length > 0 && (
+        <div
+          className="rounded-md px-3 py-2 text-xs"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--amber) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--amber) 28%, transparent)",
+            color: "var(--text-2)",
+          }}
+        >
+          <span style={{ color: "var(--amber)", fontWeight: 600 }}>
+            Not balanced yet ·{" "}
+          </span>
+          {unbalancedRows.map((r, i) => {
+            const sign = r.remaining > 0 ? "still need" : "over by";
+            const amt = Math.abs(r.remaining).toLocaleString(undefined, { maximumFractionDigits: 8 });
+            return (
+              <span key={`${r.dir}|${r.ccy}`}>
+                {i > 0 && ", "}
+                <span style={{ color: dirColor(r.dir), fontWeight: 500 }}>{dirLabel(r.dir)} {r.ccy}</span>
+                <span style={{ color: "var(--text-3)" }}>: {sign} </span>
+                <span className="font-mono tabular-nums">{amt}</span>
+              </span>
+            );
+          })}
+          <p className="mt-1" style={{ color: "var(--text-4)" }}>
+            Total per (direction, currency) across all parts must equal the original transaction.
+            Decimal commas are accepted (1234,56 = 1234.56).
+          </p>
+        </div>
+      )}
+
       {/* Footer actions */}
       <div className="flex items-center gap-3 pt-1">
         <button
@@ -250,7 +317,7 @@ export default function SplitForm({
           disabled={pending || !allBalanced}
           className="h-7 rounded px-4 text-xs font-medium transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
           style={{ backgroundColor: "var(--green-btn-bg)", color: "var(--accent)", border: "1px solid var(--green-btn-border)" }}
-          title={allBalanced ? "Split now" : "All amounts must allocate exactly to the original"}
+          title={allBalanced ? "Split now" : "Allocate all amounts before applying"}
         >
           {pending ? "Splitting…" : `Apply split · ${parts.length} parts`}
         </button>
