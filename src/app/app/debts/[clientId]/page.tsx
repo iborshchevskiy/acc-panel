@@ -152,6 +152,7 @@ export default async function DebtClientPage({ params }: PageProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Amounts</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Location</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Note</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-slate-500" />
               </tr>
             </thead>
             <tbody>
@@ -188,6 +189,19 @@ export default async function DebtClientPage({ params }: PageProps) {
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500">{tx.location ?? "—"}</td>
                     <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate">{tx.comment ?? "—"}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/app/transactions?tx=${tx.id}`}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors whitespace-nowrap"
+                        style={{ color: "var(--text-3)", border: "1px solid var(--inner-border)", backgroundColor: "var(--raised-hi)" }}
+                        title="Open this transaction in the Transactions list"
+                      >
+                        View
+                        <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden>
+                          <path d="M2 7L7 2M7 2H3.5M7 2V5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </Link>
+                    </td>
                   </tr>
                 );
               })}

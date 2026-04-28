@@ -3,9 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db/client";
 import { cashOperations, investors } from "@/db/schema/capital";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, desc, asc } from "drizzle-orm";
+import { currencies } from "@/db/schema/wallets";
+import { transactionLegs } from "@/db/schema/transactions";
+import { eq, desc, asc, sql } from "drizzle-orm";
 import { addCashOperation, deleteCashOperation } from "./actions";
 import InvestorPicker from "./InvestorPicker";
+import CurrencyCombobox from "@/components/CurrencyCombobox";
 
 export default async function CapitalPage() {
   const supabase = await createClient();
@@ -16,7 +19,7 @@ export default async function CapitalPage() {
     .from(organizationMembers).where(eq(organizationMembers.userId, user.id)).limit(1);
   if (!membership) redirect("/app/onboarding");
 
-  const [rows, investorRows] = await Promise.all([
+  const [rows, investorRows, currencyRows] = await Promise.all([
     db.select().from(cashOperations)
       .where(eq(cashOperations.organizationId, membership.organizationId))
       .orderBy(desc(cashOperations.date)),
@@ -24,7 +27,16 @@ export default async function CapitalPage() {
       .from(investors)
       .where(eq(investors.organizationId, membership.organizationId))
       .orderBy(asc(investors.name)),
+    // Currencies sorted by transaction-leg usage so the most-used codes
+    // bubble to the top of the combobox dropdown.
+    db.select({ code: currencies.code, usageCount: sql<number>`count(${transactionLegs.id})::int` })
+      .from(currencies)
+      .leftJoin(transactionLegs, eq(transactionLegs.currency, currencies.code))
+      .where(eq(currencies.organizationId, membership.organizationId))
+      .groupBy(currencies.code)
+      .orderBy(sql`count(${transactionLegs.id}) desc`, asc(currencies.code)),
   ]);
+  const orgCurrencyCodes = currencyRows.map((c) => c.code);
 
   // Summary per investor per currency — derived from cash_operations so
   // historical rows (pre-investors-table) still aggregate correctly.
@@ -79,8 +91,16 @@ export default async function CapitalPage() {
         <InvestorPicker initial={investorRows} />
         <input name="amount" type="number" step="any" required placeholder="Amount"
           className="h-9 w-32 rounded-md bg-white/5 px-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500" />
-        <input name="currency" defaultValue="USDT" placeholder="Currency"
-          className="h-9 w-24 rounded-md bg-white/5 px-3 text-sm text-slate-200 uppercase outline-none focus:ring-1 focus:ring-emerald-500" />
+        <CurrencyCombobox
+          name="currency"
+          codes={orgCurrencyCodes}
+          defaultValue={orgCurrencyCodes.includes("USDT") ? "USDT" : (orgCurrencyCodes[0] ?? "USDT")}
+          placeholder="CCY"
+          required
+          wrapperClassName="w-24"
+          inputClassName="h-9 w-full rounded-md bg-white/5 px-3 text-sm text-slate-200 uppercase outline-none focus:ring-1 focus:ring-emerald-500 font-mono tracking-wide"
+          inputStyle={{ color: "var(--text-1)" }}
+        />
         <select name="type" className="h-9 rounded-md px-3 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500"
           style={{ backgroundColor: "var(--inner-border)" }}>
           <option value="deposit">Deposit</option>
