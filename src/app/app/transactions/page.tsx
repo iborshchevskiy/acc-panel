@@ -167,9 +167,9 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
     : `/app/transactions?new=1${q ? `&q=${encodeURIComponent(q)}` : ""}${typeFilter ? `&type=${encodeURIComponent(typeFilter)}` : ""}`;
 
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex flex-col gap-4 p-6 md:flex-1 md:min-h-0">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
           <p className="text-sm text-slate-500">
@@ -214,8 +214,11 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
         />
       )}
 
-      {/* Filter bar + Table fused in one card */}
-      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
+      {/* Filter bar + Table fused in one card. On desktop the card flexes
+          to fill remaining viewport height, and the table scrolls inside it
+          — keeps the wheel scroll-context bound to one element so trackpads
+          / Magic Mouse don't get the Y axis trapped by the inner overflow-x.*/}
+      <div className="rounded-xl overflow-hidden md:flex md:flex-col md:flex-1 md:min-h-0" style={{ border: "1px solid var(--inner-border)" }}>
         <TransactionFilters
           key={`${q}|${typeFilter}`}
           q={q}
@@ -258,7 +261,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between shrink-0">
           <span className="text-xs text-slate-500">
             Page {page} of {totalPages}
           </span>

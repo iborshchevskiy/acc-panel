@@ -1031,13 +1031,15 @@ export default function TransactionTable({
   }
 
   return (
-    <div className="relative">
+    <div className="relative md:flex md:flex-col md:flex-1 md:min-h-0">
       <div
-        className="overflow-x-auto"
+        className="overflow-auto md:flex-1 md:min-h-0"
         style={{
-          // iPad/PWA: let the user pan the wide table horizontally instead of
-          // clipping columns. overscroll-behavior contains the scroll so the
-          // page doesn't bounce when the user reaches the edge.
+          // overscroll-behavior contain stops scroll-chaining at the table's
+          // edges (no body bounce on iPad/Mac trackpads). On desktop the
+          // bounded md:flex-1 height puts both X and Y scroll into ONE
+          // element, so trackpads can wheel inside the table without the
+          // Y axis getting trapped by an implicit overflow-y on overflow-x.
           overscrollBehavior: "contain",
           WebkitOverflowScrolling: "touch",
         }}
