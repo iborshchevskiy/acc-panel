@@ -1,3 +1,8 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { db } from "@/db/client";
+import { organizationMembers } from "@/db/schema/system";
+import { eq, and } from "drizzle-orm";
 import { createOrg } from "./actions";
 
 const BASE_CURRENCIES = ["USD", "EUR", "CZK", "GBP"] as const;
@@ -8,6 +13,24 @@ interface PageProps {
 
 export default async function OnboardingPage({ searchParams }: PageProps) {
   const { error } = await searchParams;
+
+  // If the visitor already belongs to an organisation, they have no business
+  // on the onboarding form — bounce them to the dashboard. The earlier UX
+  // let signed-in users hit /onboarding directly and accidentally create a
+  // second org (one tester ended up with two: "Kaka" + "Binoq").
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    const [existing] = await db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(
+        eq(organizationMembers.userId, user.id),
+        eq(organizationMembers.isActive, true),
+      ))
+      .limit(1);
+    if (existing) redirect("/app/dashboard");
+  }
 
   return (
     <div

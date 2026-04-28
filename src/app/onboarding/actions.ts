@@ -135,8 +135,17 @@ export async function createOrg(formData: FormData): Promise<void> {
     sendWelcomeEmail({ email: user.email ?? "", orgName: name }).catch(() => {});
   } catch (err: unknown) {
     if ((err as { digest?: string })?.digest?.startsWith("NEXT_REDIRECT")) throw err;
-    const msg = err instanceof Error ? err.message : "Could not create organisation.";
-    redirect("/onboarding?error=" + encodeURIComponent(msg));
+    const raw = err instanceof Error ? err.message : "";
+    // Never surface a raw "Failed query / params: ..." to the user. If we got
+    // here with a unique violation, the retry exhausted itself — that's
+    // cosmically unlikely but the friendly fallback is to ask them to retry
+    // with a slightly different name.
+    const friendly = raw.includes("unique") || raw.includes("duplicate")
+      ? "Couldn't allocate a unique identifier for this name — try a slightly different organisation name."
+      : "Couldn't create the organisation. Please try again.";
+    // Server-side log keeps the real error available for debugging.
+    console.error("[onboarding] createOrg failed:", raw);
+    redirect("/onboarding?error=" + encodeURIComponent(friendly));
   }
 
   redirect("/app/dashboard");
