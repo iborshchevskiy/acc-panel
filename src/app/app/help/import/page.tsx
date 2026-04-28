@@ -158,18 +158,33 @@ function RelatedGrid({ items }: { items: { href: string; title: string; body: st
 function CsvScene() {
   return (
     <div className="scene-csv-stage">
-      <div className="scene-csv-zone">
-        <div className="scene-csv-file">CSV</div>
-        <p className="scene-csv-label">Drop a CSV here, or click to choose</p>
-        <div className="scene-csv-progress" />
-        <p className="scene-csv-success">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M4 7l2 2 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Recreates the real /app/data CSV importer: file picker label,
+          Import button, success result chip. */}
+      <div className="scene-csv-form">
+        <span className="scene-csv-choose">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+            <path d="M7 9V1M4 4l3-3 3 3M2 11h10"
+              stroke="currentColor" strokeWidth="1.4"
+              strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          1,247 rows imported
-        </p>
+          <span>
+            <span className="scene-csv-filename">kraken_export.csv</span>
+            <span className="help-caret" />
+          </span>
+        </span>
+        <span className="scene-csv-import">
+          <span className="label-import">Import</span>
+        </span>
       </div>
+
+      <div className="scene-csv-result">
+        <span className="ok">✓ Import complete</span>
+        <span className="meta">1,247 inserted · 12 skipped · 0 errors</span>
+      </div>
+
+      <p className="scene-csv-hint">
+        Accepts v1-compatible semicolon CSV or JSON. Existing TxIDs are skipped (idempotent).
+      </p>
     </div>
   );
 }

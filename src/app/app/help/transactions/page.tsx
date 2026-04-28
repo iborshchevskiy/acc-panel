@@ -228,129 +228,178 @@ function RelatedGrid({
   );
 }
 
-/* ── The animated scene ───────────────────────────────────────────────── */
+/* ── The animated scene — recreates the real Transactions page UI ────── */
 
 function ManualTxScene() {
   return (
     <div className="scene-tx-stage">
-      {/* + Add transaction button */}
-      <span className="scene-tx-toggle">+ Add transaction</span>
+      {/* Page chrome — header, filters, table — rendered exactly like the
+          real /app/transactions page so the demo feels like the product. */}
+      <div className="scene-tx-tablewrap">
+        <div className="scene-tx-head">
+          <div>
+            <div className="title">Transactions</div>
+            <div className="sub">128 total</div>
+          </div>
+          <span className="scene-tx-newbtn">+ New</span>
+        </div>
 
-      {/* Existing list */}
-      <div className="scene-tx-list" aria-hidden>
-        {/* New row that materialises near the end of the loop */}
-        <div className="scene-tx-row scene-tx-newrow">
-          <code>27 Apr</code>
-          <span>
-            <span className="loss">−500.00 USD</span>{" "}
-            <span style={{ color: "var(--text-4)" }}>→</span>{" "}
+        <div className="scene-tx-filter">
+          <span className="scene-tx-search" style={{ color: "var(--text-4)" }}>
+            Search TxID, address, currency, comment…
+          </span>
+          <span className="scene-tx-typechip">Exchange</span>
+          <span className="scene-tx-typechip">Revenue</span>
+          <span className="scene-tx-typechip">Fee</span>
+        </div>
+
+        <div className="scene-tx-thead">
+          <span>Date</span><span>Type</span><span>Status</span>
+          <span>In</span><span>Out</span><span>Rate</span><span>Client</span>
+        </div>
+
+        <div className="scene-tx-list" aria-hidden>
+          {/* New row that lands at the end of the loop */}
+          <div className="scene-tx-row scene-tx-newrow">
+            <div>
+              <div className="date">2026-04-28 11:32</div>
+              <div className="id">a4f2d1c7</div>
+            </div>
+            <span className="real-pill real-pill-exchange">Exchange</span>
+            <span className="real-status done"><span className="dot" />Done</span>
             <span className="gain">+498.50 USDT</span>
-          </span>
-          <span className="help-pill">Exchange</span>
-        </div>
-        <div className="scene-tx-row">
-          <code>26 Apr</code>
-          <span>
-            <span className="loss">−1,200.00 EUR</span>{" "}
-            <span style={{ color: "var(--text-4)" }}>→</span>{" "}
+            <span className="loss">−500.00 USD</span>
+            <span className="rate">1.0030</span>
+            <span className="real-client-chip">
+              <span className="av">A</span>Anna K.
+            </span>
+          </div>
+
+          {/* Existing rows — these stay visible the whole loop */}
+          <div className="scene-tx-row">
+            <div>
+              <div className="date">2026-04-27 16:09</div>
+              <div className="id">f1e8b22a</div>
+            </div>
+            <span className="real-pill real-pill-exchange">Exchange</span>
+            <span className="real-status done"><span className="dot" />Done</span>
             <span className="gain">+1,290.40 USDT</span>
-          </span>
-          <span className="help-pill" style={{ background: "color-mix(in srgb, var(--indigo) 18%, transparent)", color: "var(--indigo)" }}>
-            Exchange
-          </span>
-        </div>
-        <div className="scene-tx-row">
-          <code>26 Apr</code>
-          <span>
+            <span className="loss">−1,200.00 EUR</span>
+            <span className="rate">1.0753</span>
+            <span className="real-client-chip">
+              <span className="av">P</span>Pavel L.
+            </span>
+          </div>
+
+          <div className="scene-tx-row">
+            <div>
+              <div className="date">2026-04-27 14:51</div>
+              <div className="id">5b2c9e4d</div>
+            </div>
+            <span className="real-pill real-pill-fee">Fee</span>
+            <span className="real-status done"><span className="dot" />Done</span>
+            <span style={{ color: "var(--text-4)" }}>—</span>
             <span className="loss">−25.00 USDT</span>
-          </span>
-          <span className="help-pill" style={{ background: "color-mix(in srgb, var(--violet) 18%, transparent)", color: "var(--violet)" }}>
-            Fee
-          </span>
-        </div>
-        <div className="scene-tx-row">
-          <code>25 Apr</code>
-          <span>
+            <span className="rate">—</span>
+            <span className="real-client-placeholder">+ client</span>
+          </div>
+
+          <div className="scene-tx-row">
+            <div>
+              <div className="date">2026-04-27 09:14</div>
+              <div className="id">2a44ff19</div>
+            </div>
+            <span className="real-pill real-pill-revenue">Revenue</span>
+            <span className="real-status in_process"><span className="dot" />In process</span>
             <span className="gain">+3,000.00 USDT</span>
-          </span>
-          <span className="help-pill" style={{ background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--accent)" }}>
-            Revenue
-          </span>
+            <span style={{ color: "var(--text-4)" }}>—</span>
+            <span className="rate">—</span>
+            <span className="real-client-chip">
+              <span className="av">M</span>Marko D.
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* The form, slides in then out */}
+      {/* Manual transaction form — slides in over the table when "+ New" pulses */}
       <div className="scene-tx-form" aria-hidden>
-        <div className="flex items-center justify-between">
-          <p className="text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>
-            New transaction
-          </p>
-          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-            esc to cancel
-          </span>
-        </div>
+        <div className="eyebrow">New transaction</div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Date">
-            <span className="scene-tx-fadefield f1">
-              <span className="scene-tx-typed t1">27 Apr 2026</span>
-              <span className="help-caret" />
-            </span>
-          </FormField>
-          <FormField label="Type">
-            <span className="scene-tx-fadefield f2">
-              <span
-                className="help-pill"
-                style={{ background: "color-mix(in srgb, var(--indigo) 18%, transparent)", color: "var(--indigo)" }}
-              >
-                Exchange
+        {/* Meta row: Date / Type / Status / Comment */}
+        <div className="meta">
+          <div className="col">
+            <span className="label">Date &amp; time</span>
+            <span className="val">
+              <span className="scene-tx-fade f1">
+                <span className="scene-tx-typed t1">2026-04-28 11:32</span>
+                <span className="help-caret" />
               </span>
             </span>
-          </FormField>
+          </div>
+          <div className="col">
+            <span className="label">Type</span>
+            <span className="val">
+              <span className="scene-tx-fade f2">
+                <span className="real-pill real-pill-exchange">Exchange</span>
+              </span>
+            </span>
+          </div>
+          <div className="col">
+            <span className="label">Status</span>
+            <span className="val">
+              <span className="scene-tx-fade f3">
+                <span className="real-status done"><span className="dot" />Done</span>
+              </span>
+            </span>
+          </div>
+          <div className="col">
+            <span className="label">Comment</span>
+            <span className="val" style={{ color: "var(--text-4)" }}>—</span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="You give">
-            <span className="scene-tx-fadefield f3" style={{ color: "var(--red)" }}>
-              <span className="scene-tx-typed t2">−500.00</span>
-              <span className="help-caret" />
-              <span className="ml-1" style={{ color: "var(--text-3)" }}>USD</span>
-            </span>
-          </FormField>
-          <FormField label="You receive">
-            <span className="scene-tx-fadefield f4" style={{ color: "var(--accent)" }}>
-              <span className="scene-tx-typed t3">+498.50</span>
-              <span className="help-caret" />
-              <span className="ml-1" style={{ color: "var(--text-3)" }}>USDT</span>
-            </span>
-          </FormField>
+        {/* Legs — Income | Swap | Outcome */}
+        <div className="scene-tx-legs">
+          <div>
+            <div className="col-label income">Income</div>
+            <div className="leg">
+              <span className="amount" style={{ color: "var(--accent)" }}>
+                <span className="scene-tx-fade f4">
+                  <span className="scene-tx-typed t2">+498.50</span>
+                  <span className="help-caret" />
+                </span>
+              </span>
+              <span className="ccy">
+                <span className="scene-tx-fade f5">USDT</span>
+              </span>
+            </div>
+          </div>
+          <div className="swap" aria-hidden>
+            <svg width="14" height="14" viewBox="0 0 15 15" fill="none">
+              <path d="M2 4.5h10M10 2l2.5 2.5L10 7" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M13 10.5H3M5 8l-2.5 2.5L5 13" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div>
+            <div className="col-label outcome">Outcome</div>
+            <div className="leg">
+              <span className="amount" style={{ color: "var(--red)" }}>
+                <span className="scene-tx-fade f4">
+                  <span className="scene-tx-typed t3">−500.00</span>
+                  <span className="help-caret" />
+                </span>
+              </span>
+              <span className="ccy">
+                <span className="scene-tx-fade f5">USD</span>
+              </span>
+            </div>
+          </div>
         </div>
 
-        <button className="help-btn-primary scene-tx-savebtn" type="button">
-          Save transaction
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function FormField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-        {label}
-      </span>
-      <div
-        className="flex items-center min-h-[34px] px-3 py-1.5 text-[12px]"
-        style={{
-          background: "var(--bg)",
-          border: "1px solid var(--inner-border)",
-          borderRadius: 7,
-          color: "var(--text-1)",
-          fontFamily: "var(--font-ibm-plex-mono), ui-monospace, monospace",
-        }}
-      >
-        {children}
+        <div className="scene-tx-savewrap">
+          <span className="scene-tx-savebtn">Add transaction</span>
+          <span className="scene-tx-fade f6" style={{ fontSize: 11, color: "var(--text-3)" }}>Cancel</span>
+        </div>
       </div>
     </div>
   );

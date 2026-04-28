@@ -1,7 +1,10 @@
 /* ── Help / User-manual animations ──────────────────────────────────────── */
-/* Pure CSS scenes that loop forever, like a muted demo reel.
-   Each .help-scene gets a single named animation that orchestrates every
-   child via animation-delay. No JS needed. */
+/* Each scene is a faithful pixel-recreation of a real screen in the app.
+   Pure CSS — every animation is a single named keyframes orchestration that
+   loops forever. No JS, no client components needed. Reduced-motion freezes
+   everything at the end-state. */
+
+/* ── Prose & general primitives ─────────────────────────────────────────── */
 
 .help-prose { font-size: 15px; line-height: 1.7; color: var(--text-2); }
 .help-prose strong { color: var(--text-1); font-weight: 600; }
@@ -43,78 +46,116 @@
   letter-spacing: 0.02em;
 }
 
-/* Looping cursor tip */
-.help-cursor {
-  position: absolute;
-  pointer-events: none;
-  width: 14px; height: 18px;
-  z-index: 30;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
-}
-.help-cursor svg { width: 100%; height: 100%; }
+/* ── Real-component look-alikes (shared by scenes) ──────────────────────── */
 
-/* Generic helpers used by scenes */
-.help-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--inner-border);
-  font-size: 13px;
-  color: var(--text-2);
-}
-.help-pill {
+/* Type pills — colours match TX_TYPE_COLORS in TransactionTable.tsx */
+.real-pill {
   display: inline-flex; align-items: center;
-  height: 18px; padding: 0 7px;
+  height: 18px; padding: 0 8px;
   border-radius: 999px;
   font-size: 10px; font-weight: 500;
-  background: var(--accent-lo); color: var(--accent);
+  white-space: nowrap;
 }
-.help-input-mock {
+.real-pill-exchange { background: color-mix(in srgb, var(--indigo) 18%, transparent); color: var(--indigo); }
+.real-pill-revenue  { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.real-pill-expense  { background: color-mix(in srgb, var(--red) 18%, transparent);    color: var(--red); }
+.real-pill-fee      { background: color-mix(in srgb, var(--violet) 18%, transparent); color: var(--violet); }
+.real-pill-transfer { background: color-mix(in srgb, var(--text-2) 14%, transparent); color: var(--text-2); }
+.real-pill-debt     { background: color-mix(in srgb, var(--amber) 18%, transparent);  color: var(--amber); }
+
+/* Status indicator with dot — matches StatusPicker / ImportButton */
+.real-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px;
+}
+.real-status .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+}
+.real-status.done       { color: var(--accent); } .real-status.done       .dot { background: var(--accent); }
+.real-status.in_process { color: var(--amber);  } .real-status.in_process .dot { background: var(--amber); }
+.real-status.failed     { color: var(--red);    } .real-status.failed     .dot { background: var(--red); }
+.real-status.unknown    { color: var(--text-3); } .real-status.unknown    .dot { background: var(--text-3); }
+.real-status.idle       { color: var(--text-2); } .real-status.idle       .dot { background: var(--text-2); }
+.real-status.running    { color: var(--amber);  } .real-status.running    .dot { background: var(--amber); }
+
+/* Client chip — matches ClientPicker assigned state */
+.real-client-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 8px; border-radius: 4px;
+  font-size: 11px;
+  background: var(--blue-chip-bg, color-mix(in srgb, var(--blue) 14%, transparent));
+  color: var(--blue);
+  border: 1px solid color-mix(in srgb, var(--blue) 18%, transparent);
+}
+.real-client-chip .av {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  font-size: 8px; font-weight: 700;
+  background: color-mix(in srgb, var(--blue) 25%, transparent);
+}
+.real-client-placeholder {
+  font-size: 11px; color: var(--text-3);
+}
+
+/* Chain badges — match CHAIN_META in wallets/page.tsx */
+.real-chain {
   display: inline-flex; align-items: center;
-  height: 32px; padding: 0 12px;
-  background: var(--surface); border: 1px solid var(--inner-border);
-  border-radius: 8px;
+  height: 18px; padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px; font-weight: 600;
+}
+.real-chain-tron { background: color-mix(in srgb, var(--red) 13%, transparent);    color: var(--red); }
+.real-chain-eth  { background: color-mix(in srgb, var(--indigo) 13%, transparent); color: var(--indigo); }
+.real-chain-bnb  { background: color-mix(in srgb, var(--amber) 13%, transparent);  color: var(--amber); }
+.real-chain-sol  { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); }
+
+/* Inputs that look like the underline-style used in the manual form */
+.real-underline-input {
+  display: inline-flex; align-items: center;
+  border-bottom: 1px solid var(--inner-border);
   font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
   font-size: 12px;
   color: var(--text-1);
-}
-.help-btn-primary {
-  display: inline-flex; align-items: center; justify-content: center;
-  height: 32px; padding: 0 14px;
-  background: var(--accent); color: var(--surface);
-  border-radius: 8px; font-size: 12px; font-weight: 500;
-}
-.help-btn-ghost {
-  display: inline-flex; align-items: center; justify-content: center;
-  height: 32px; padding: 0 14px;
-  background: var(--surface); color: var(--text-2);
-  border: 1px solid var(--inner-border);
-  border-radius: 8px; font-size: 12px;
+  padding: 0 0 2px 0;
+  background: transparent;
 }
 
-/* ── Caret blink (typing indicator) ─────────────────────────────────────── */
-@keyframes helpCaret {
-  0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; }
+/* Buttons */
+.real-btn-green {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; padding: 0 12px;
+  background: var(--green-btn-bg, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--accent);
+  border: 1px solid var(--green-btn-border, color-mix(in srgb, var(--accent) 24%, transparent));
+  border-radius: 6px; font-size: 12px; font-weight: 500;
 }
+.real-btn-accent {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; padding: 0 12px;
+  background: var(--accent); color: var(--surface);
+  border-radius: 6px; font-size: 12px; font-weight: 500;
+}
+.real-btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; padding: 0 10px;
+  background: var(--surface); color: var(--text-2);
+  border: 1px solid var(--inner-border);
+  border-radius: 6px; font-size: 12px;
+}
+
+/* Caret blink */
+@keyframes helpCaret { 0%,49%{opacity:1;} 50%,100%{opacity:0;} }
 .help-caret {
   display: inline-block;
-  width: 1px; height: 1.2em;
+  width: 1px; height: 1em;
   background: var(--accent);
   margin-left: 2px;
-  vertical-align: middle;
+  vertical-align: -0.15em;
   animation: helpCaret 1s steps(1) infinite;
 }
 
-/* ── Pulse ring (used to highlight a target) ────────────────────────────── */
-@keyframes helpPulseRing {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
-  100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent); }
-}
-
-/* ── Sweep highlight, like Apple's wallpaper sheen ──────────────────────── */
-@keyframes helpSheen {
-  0%   { transform: translateX(-120%); }
-  100% { transform: translateX(220%); }
-}
+/* Sweeping highlight (subtle Apple-like sheen) */
+@keyframes helpSheen { 0%{transform:translateX(-120%);} 100%{transform:translateX(220%);} }
 .help-sheen {
   position: absolute; inset: 0; pointer-events: none;
   overflow: hidden; border-radius: inherit;
@@ -129,143 +170,257 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   SCENE 1 — Manual transaction creation. 14s loop.
+   SCENE 1 — Manual transaction creation. 16s loop.
+   Reproduces the real Transactions table + ManualTransactionForm exactly.
    ────────────────────────────────────────────────────────────────────────── */
-.scene-tx-stage {
+
+.scene-tx-stage { position: relative; height: 460px; overflow: hidden; }
+
+/* Header strip with "+ New" button */
+.scene-tx-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.scene-tx-head .title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.scene-tx-head .sub   { font-size: 11px; color: var(--text-3); }
+.scene-tx-newbtn {
+  display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  background: var(--green-btn-bg, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--accent);
+  border: 1px solid var(--green-btn-border, color-mix(in srgb, var(--accent) 24%, transparent));
+  border-radius: 5px; font-size: 12px; font-weight: 500;
   position: relative;
-  height: 380px;
-  display: grid;
-  grid-template-rows: auto 1fr;
+  animation: scnTxNewBtn 16s ease infinite;
 }
-.scene-tx-list {
-  position: absolute; inset: 38px 0 0 0;
-  padding: 0 12px;
-  animation: scnTxListShift 14s linear infinite;
+@keyframes scnTxNewBtn {
+  0%, 1%, 11%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
+  4% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); }
+  8% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent); }
 }
-@keyframes scnTxListShift {
-  0%, 100% { transform: translateY(0); }
-  92%, 99% { transform: translateY(0); }
-}
-.scene-tx-row {
-  display: grid;
-  grid-template-columns: 70px 1fr 80px;
-  gap: 12px; align-items: center;
-  padding: 11px 12px;
-  font-size: 12px; color: var(--text-3);
+
+/* Filter bar */
+.scene-tx-filter {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px;
+  background: var(--raised-hi);
   border-bottom: 1px solid var(--inner-border);
 }
-.scene-tx-row code {
-  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
-  font-size: 11px; color: var(--text-2);
+.scene-tx-search {
+  flex: 1; height: 22px; padding: 0 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; font-size: 11px;
+  color: var(--text-3);
+  display: inline-flex; align-items: center;
 }
-.scene-tx-row .gain { color: var(--accent); font-variant-numeric: tabular-nums; }
-.scene-tx-row .loss { color: var(--red);    font-variant-numeric: tabular-nums; }
+.scene-tx-typechip {
+  height: 18px; padding: 0 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 500;
+  border: 1px solid var(--border); color: var(--text-4);
+  display: inline-flex; align-items: center;
+}
+
+/* Table header */
+.scene-tx-thead {
+  display: grid;
+  grid-template-columns: 92px 88px 78px 1fr 1fr 70px 80px;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--raised-hi);
+  border-bottom: 1px solid var(--inner-border);
+  font-size: 10px; font-weight: 500;
+  color: var(--text-4);
+  text-transform: none;
+}
+
+/* Table body */
+.scene-tx-list {
+  position: absolute;
+  left: 0; right: 0;
+  top: 38px; /* header */
+  bottom: 0;
+  background: var(--bg);
+  animation: scnTxListReveal 16s ease infinite;
+}
+@keyframes scnTxListReveal {
+  /* hidden behind the form while form is open */
+  0%, 18%   { opacity: 1; }
+  22%, 78%  { opacity: 0.18; }
+  82%, 100% { opacity: 1; }
+}
+
+/* Wrapper that holds head/filter/thead/list — used to position the form on top */
+.scene-tx-tablewrap {
+  position: absolute; inset: 0;
+}
+
+/* Individual row */
+.scene-tx-row {
+  display: grid;
+  grid-template-columns: 92px 88px 78px 1fr 1fr 70px 80px;
+  gap: 6px; align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--inner-border);
+  font-size: 11px;
+}
+.scene-tx-row .date  { color: var(--text-3); font-family: var(--font-ibm-plex-mono), ui-monospace, monospace; font-size: 10px; line-height: 1.2; }
+.scene-tx-row .id    { color: var(--text-5); font-family: var(--font-ibm-plex-mono), ui-monospace, monospace; font-size: 9px; }
+.scene-tx-row .gain  { color: var(--accent); font-family: var(--font-ibm-plex-mono), ui-monospace, monospace; font-size: 11px; font-variant-numeric: tabular-nums; }
+.scene-tx-row .loss  { color: var(--red);    font-family: var(--font-ibm-plex-mono), ui-monospace, monospace; font-size: 11px; font-variant-numeric: tabular-nums; }
+.scene-tx-row .rate  { color: var(--text-3); font-family: var(--font-ibm-plex-mono), ui-monospace, monospace; font-size: 10px; }
+
 .scene-tx-newrow {
-  opacity: 0;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  animation: scnTxNewRow 14s ease infinite;
+  animation: scnTxNewRow 16s ease infinite;
 }
 @keyframes scnTxNewRow {
-  0%, 78% { opacity: 0; transform: translateY(-6px); background: color-mix(in srgb, var(--accent) 18%, transparent); }
-  82%, 100% { opacity: 1; transform: translateY(0); background: transparent; }
+  0%, 86% { opacity: 0; transform: translateY(-4px);
+           background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  90%, 100% { opacity: 1; transform: translateY(0);
+           background: transparent; }
 }
+
+/* The form panel — slides in over the table */
 .scene-tx-form {
-  position: absolute; inset: 38px 12px 12px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border-hi);
+  position: absolute;
+  top: 38px; left: 12px; right: 12px;
+  background: var(--raised-hi);
+  border: 1px solid var(--inner-border);
   border-radius: 12px;
-  padding: 18px;
-  display: flex; flex-direction: column; gap: 14px;
-  opacity: 0; transform: translateY(8px);
-  animation: scnTxForm 14s ease infinite;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+  opacity: 0; transform: translateY(6px);
+  pointer-events: none;
+  z-index: 5;
+  animation: scnTxForm 16s ease infinite;
   box-shadow: 0 16px 48px rgba(0,0,0,0.35);
 }
 @keyframes scnTxForm {
-  0%, 6%   { opacity: 0; transform: translateY(8px); pointer-events: none; }
-  9%, 75%  { opacity: 1; transform: translateY(0); }
-  78%, 100%{ opacity: 0; transform: translateY(-4px); }
+  0%, 7%   { opacity: 0; transform: translateY(6px); }
+  10%, 78% { opacity: 1; transform: translateY(0); }
+  82%, 100%{ opacity: 0; transform: translateY(-3px); }
 }
-.scene-tx-fadefield {
-  opacity: 0; animation: scnFade 14s ease infinite;
+.scene-tx-form .eyebrow {
+  font-size: 9px; font-weight: 500; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-3);
 }
-.scene-tx-fadefield.f1 { animation-name: scnFadeF1; }
-.scene-tx-fadefield.f2 { animation-name: scnFadeF2; }
-.scene-tx-fadefield.f3 { animation-name: scnFadeF3; }
-.scene-tx-fadefield.f4 { animation-name: scnFadeF4; }
+.scene-tx-form .meta {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+}
+.scene-tx-form .meta .col {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.scene-tx-form .meta .col .label {
+  font-size: 9px; color: var(--text-4);
+}
+.scene-tx-form .meta .col .val {
+  height: 18px; border-bottom: 1px solid var(--inner-border);
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-size: 11px; color: var(--text-1);
+  display: inline-flex; align-items: flex-end; padding-bottom: 1px;
+}
+
+/* Sequenced field reveals */
+.scene-tx-fade { opacity: 0; }
+.scene-tx-fade.f1 { animation: scnFadeF1 16s ease infinite; }
+.scene-tx-fade.f2 { animation: scnFadeF2 16s ease infinite; }
+.scene-tx-fade.f3 { animation: scnFadeF3 16s ease infinite; }
+.scene-tx-fade.f4 { animation: scnFadeF4 16s ease infinite; }
+.scene-tx-fade.f5 { animation: scnFadeF5 16s ease infinite; }
+.scene-tx-fade.f6 { animation: scnFadeF6 16s ease infinite; }
 @keyframes scnFadeF1 { 0%,15%{opacity:0;} 18%,77%{opacity:1;} 80%,100%{opacity:0;} }
-@keyframes scnFadeF2 { 0%,28%{opacity:0;} 31%,77%{opacity:1;} 80%,100%{opacity:0;} }
-@keyframes scnFadeF3 { 0%,42%{opacity:0;} 45%,77%{opacity:1;} 80%,100%{opacity:0;} }
-@keyframes scnFadeF4 { 0%,58%{opacity:0;} 61%,77%{opacity:1;} 80%,100%{opacity:0;} }
+@keyframes scnFadeF2 { 0%,22%{opacity:0;} 25%,77%{opacity:1;} 80%,100%{opacity:0;} }
+@keyframes scnFadeF3 { 0%,30%{opacity:0;} 33%,77%{opacity:1;} 80%,100%{opacity:0;} }
+@keyframes scnFadeF4 { 0%,40%{opacity:0;} 43%,77%{opacity:1;} 80%,100%{opacity:0;} }
+@keyframes scnFadeF5 { 0%,52%{opacity:0;} 55%,77%{opacity:1;} 80%,100%{opacity:0;} }
+@keyframes scnFadeF6 { 0%,60%{opacity:0;} 63%,77%{opacity:1;} 80%,100%{opacity:0;} }
 
 .scene-tx-typed { display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; }
-.scene-tx-typed.t1 { animation: scnType1 14s steps(8) infinite; }
-.scene-tx-typed.t2 { animation: scnType2 14s steps(7) infinite; }
-.scene-tx-typed.t3 { animation: scnType3 14s steps(8) infinite; }
-@keyframes scnType1 {
-  0%,18%   { width: 0; }
-  24%,77%  { width: 8ch; }
-  80%,100% { width: 0; }
+.scene-tx-typed.t1 { animation: scnType1 16s steps(16) infinite; }
+.scene-tx-typed.t2 { animation: scnType2 16s steps(7)  infinite; }
+.scene-tx-typed.t3 { animation: scnType3 16s steps(7)  infinite; }
+@keyframes scnType1 { 0%,18%{width:0;} 24%,77%{width:16ch;} 80%,100%{width:0;} }
+@keyframes scnType2 { 0%,40%{width:0;} 46%,77%{width:7ch;} 80%,100%{width:0;} }
+@keyframes scnType3 { 0%,52%{width:0;} 58%,77%{width:7ch;} 80%,100%{width:0;} }
+
+/* Legs row */
+.scene-tx-legs {
+  display: grid; grid-template-columns: 1fr 28px 1fr; gap: 10px;
+  align-items: center;
 }
-@keyframes scnType2 {
-  0%,31%   { width: 0; }
-  37%,77%  { width: 7ch; }
-  80%,100% { width: 0; }
+.scene-tx-legs .col-label {
+  font-size: 10px; font-weight: 500;
+  margin-bottom: 4px;
 }
-@keyframes scnType3 {
-  0%,45%   { width: 0; }
-  51%,77%  { width: 8ch; }
-  80%,100% { width: 0; }
+.scene-tx-legs .col-label.income  { color: var(--accent); }
+.scene-tx-legs .col-label.outcome { color: var(--red); }
+.scene-tx-legs .leg {
+  display: flex; align-items: center; gap: 6px;
+}
+.scene-tx-legs .leg .amount {
+  flex: 1; height: 18px; border-bottom: 1px solid var(--inner-border);
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  display: inline-flex; align-items: flex-end; padding-bottom: 1px;
+}
+.scene-tx-legs .leg .ccy {
+  width: 38px; height: 18px; border-bottom: 1px solid var(--inner-border);
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-size: 11px; color: var(--text-1);
+  display: inline-flex; align-items: flex-end; padding-bottom: 1px;
+}
+.scene-tx-legs .swap {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 5px; color: var(--text-4);
 }
 
+/* Save button pulse */
+.scene-tx-savewrap {
+  display: flex; align-items: center; gap: 10px;
+}
 .scene-tx-savebtn {
-  align-self: flex-end;
   position: relative;
+  height: 28px; padding: 0 14px;
+  background: var(--green-btn-bg, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--accent);
+  border: 1px solid var(--green-btn-border, color-mix(in srgb, var(--accent) 24%, transparent));
+  border-radius: 6px; font-size: 12px; font-weight: 500;
+  display: inline-flex; align-items: center;
+  animation: scnTxSavePulse 16s ease infinite;
 }
-.scene-tx-savebtn::after {
-  content: ""; position: absolute; inset: -2px; border-radius: 10px;
-  animation: scnSaveBtnPulse 14s ease infinite;
-  pointer-events: none;
-}
-@keyframes scnSaveBtnPulse {
+@keyframes scnTxSavePulse {
   0%, 67%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
   70%       { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); }
   73%, 76%  { box-shadow: 0 0 0 12px color-mix(in srgb, var(--accent) 0%, transparent); }
   77%, 100% { box-shadow: 0 0 0 0 transparent; }
 }
 
-.scene-tx-toggle {
-  position: absolute; top: 4px; left: 12px;
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 28px; padding: 0 12px;
-  background: var(--accent); color: var(--surface);
-  border-radius: 7px; font-size: 12px; font-weight: 500;
-  z-index: 5;
-  animation: scnTxBtnPulse 14s ease infinite;
-}
-@keyframes scnTxBtnPulse {
-  0%, 3%, 9%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
-  5%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); }
-  7%   { box-shadow: 0 0 0 12px color-mix(in srgb, var(--accent) 0%, transparent); }
-}
-
 /* ─────────────────────────────────────────────────────────────────────────
-   SCENE 2 — Wallet add + auto-import. 14s loop.
+   SCENE 2 — Wallets: add a TRON wallet + import. 14s loop.
+   Reproduces the Wallets desktop table + add form + ImportButton.
    ────────────────────────────────────────────────────────────────────────── */
+
 .scene-wal-stage { position: relative; height: 380px; }
+
+/* Add form bar */
 .scene-wal-form {
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 12px;
+  background: var(--raised-hi);
   border-bottom: 1px solid var(--inner-border);
-  background: color-mix(in srgb, var(--surface) 35%, transparent);
 }
 .scene-wal-input {
-  flex: 1; height: 30px;
-  background: var(--surface); border: 1px solid var(--inner-border);
-  border-radius: 7px; padding: 0 10px;
+  flex: 1; height: 26px; padding: 0 8px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 5px;
   font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
   font-size: 11px; color: var(--text-1);
-  display: flex; align-items: center;
+  display: inline-flex; align-items: center;
   position: relative;
+  white-space: nowrap; overflow: hidden;
 }
 .scene-wal-typed {
   display: inline-block; overflow: hidden; white-space: nowrap;
@@ -276,274 +431,355 @@
   18%, 92% { width: 34ch; }
   96%,100% { width: 0; }
 }
-.scene-wal-chain {
-  height: 30px; padding: 0 10px;
-  background: var(--surface); border: 1px solid var(--inner-border);
-  border-radius: 7px;
+.scene-wal-label-input {
+  width: 100px; height: 26px; padding: 0 8px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 5px;
+  font-size: 11px; color: var(--text-3);
+  display: inline-flex; align-items: center;
+}
+.scene-wal-chain-trigger {
+  height: 26px; padding: 0 8px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 5px;
   font-size: 11px; color: var(--text-2);
-  display: flex; align-items: center; gap: 6px;
-  animation: scnWalChain 14s ease infinite;
+  display: inline-flex; align-items: center; gap: 5px;
+  position: relative;
 }
-@keyframes scnWalChain {
-  0%, 22%  { background: var(--surface); }
-  26%, 31% { background: color-mix(in srgb, var(--red) 14%, var(--surface)); border-color: var(--red); }
-  35%, 100%{ background: var(--surface); }
-}
-.scene-wal-chain .dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--red);
+.scene-wal-chain-trigger::after {
+  content: ""; width: 6px; height: 6px;
+  border-right: 1.5px solid var(--text-4);
+  border-bottom: 1.5px solid var(--text-4);
+  transform: rotate(45deg) translate(-1px, -1px);
 }
 .scene-wal-add {
-  height: 30px; padding: 0 12px;
+  height: 26px; padding: 0 12px;
   background: var(--accent); color: var(--surface);
-  border-radius: 7px; font-size: 12px; font-weight: 500;
+  border-radius: 5px; font-size: 12px; font-weight: 500;
   display: inline-flex; align-items: center;
-  animation: scnWalAdd 14s ease infinite;
+  animation: scnWalAddPulse 14s ease infinite;
 }
-@keyframes scnWalAdd {
+@keyframes scnWalAddPulse {
   0%, 36% { transform: scale(1); }
   40%     { transform: scale(0.94); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
   44%     { transform: scale(1);     box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent); }
   48%, 100% { transform: scale(1); }
 }
+
+/* Table header */
+.scene-wal-thead {
+  display: grid;
+  grid-template-columns: 60px 1fr 110px 120px 90px;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--raised-hi);
+  border-bottom: 1px solid var(--inner-border);
+  font-size: 10px; font-weight: 500;
+  color: var(--text-4);
+}
+
+/* Wallet rows */
 .scene-wal-row {
-  opacity: 0; transform: translateY(6px);
+  display: grid;
+  grid-template-columns: 60px 1fr 110px 120px 90px;
+  gap: 8px; align-items: center;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--inner-border);
+  font-size: 11px;
+}
+.scene-wal-row .addr {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-size: 10px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis;
+}
+.scene-wal-row .label {
+  font-size: 11px; color: var(--text-2);
+}
+.scene-wal-row .auto {
+  font-size: 10px; color: var(--text-3);
+}
+
+/* New wallet row — appears toward end of loop, status flips through stages */
+.scene-wal-newrow {
+  opacity: 0; transform: translateY(4px);
   animation: scnWalNewRow 14s ease infinite;
 }
 @keyframes scnWalNewRow {
-  0%, 44%  { opacity: 0; transform: translateY(8px); }
+  0%, 44%  { opacity: 0; transform: translateY(6px); }
   48%, 100%{ opacity: 1; transform: translateY(0); }
 }
-.scene-wal-status {
-  font-size: 11px; padding: 2px 8px; border-radius: 999px;
-  border: 1px solid var(--inner-border);
+
+/* The status cell on the new row cycles: idle → running → done */
+.scene-wal-newstatus { position: relative; height: 14px; }
+.scene-wal-newstatus .real-status { position: absolute; left: 0; top: 0; opacity: 0; }
+.scene-wal-newstatus .real-status.idle    { animation: scnWalStIdle    14s ease infinite; }
+.scene-wal-newstatus .real-status.running { animation: scnWalStRunning 14s ease infinite; }
+.scene-wal-newstatus .real-status.done    { animation: scnWalStDone    14s ease infinite; }
+@keyframes scnWalStIdle    { 0%,48%{opacity:0;} 52%,58%{opacity:1;} 62%,100%{opacity:0;} }
+@keyframes scnWalStRunning { 0%,62%{opacity:0;} 66%,82%{opacity:1;} 86%,100%{opacity:0;} }
+@keyframes scnWalStDone    { 0%,86%{opacity:0;} 90%,100%{opacity:1;} }
+
+/* Spinner dot for running */
+@keyframes scnWalRunningPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1.15); }
 }
-.scene-wal-status.syncing {
-  color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, transparent);
-  border-color: color-mix(in srgb, var(--amber) 30%, transparent);
-  animation: scnWalSyncing 14s ease infinite;
+.scene-wal-newstatus .real-status.running .dot {
+  animation: scnWalRunningPulse 1.2s ease-in-out infinite;
 }
-@keyframes scnWalSyncing {
-  0%, 48% { opacity: 0; }
-  52%, 78%{ opacity: 1; }
-  82%,100%{ opacity: 0; }
+
+/* Import button on the new row pulses when status switches to running */
+.scene-wal-import-btn {
+  height: 22px; padding: 0 8px;
+  background: var(--green-chip-bg, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--accent);
+  border-radius: 4px; font-size: 11px; font-weight: 500;
+  display: inline-flex; align-items: center;
+  animation: scnWalImport 14s ease infinite;
 }
-.scene-wal-status.synced {
-  color: var(--accent); background: var(--accent-lo);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  animation: scnWalSynced 14s ease infinite;
-}
-@keyframes scnWalSynced {
-  0%, 82% { opacity: 0; transform: scale(0.92); }
-  86%,100%{ opacity: 1; transform: scale(1); }
-}
-.scene-wal-progress {
-  position: relative; height: 2px; width: 100%;
-  background: var(--inner-border); border-radius: 2px;
-  overflow: hidden;
-  animation: scnWalProgFade 14s ease infinite;
-}
-@keyframes scnWalProgFade {
-  0%, 48% { opacity: 0; }
-  52%, 78%{ opacity: 1; }
-  82%,100%{ opacity: 0; }
-}
-.scene-wal-progress::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 0;
-  width: 0%; background: var(--amber);
-  animation: scnWalProg 14s linear infinite;
-}
-@keyframes scnWalProg {
-  0%, 50%  { width: 0%; }
-  78%      { width: 100%; }
-  82%,100% { width: 100%; }
+@keyframes scnWalImport {
+  0%, 53% { transform: scale(1); }
+  56%     { transform: scale(0.92); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+  60%     { transform: scale(1);    box-shadow: 0 0 0 12px color-mix(in srgb, var(--accent) 0%, transparent); }
+  64%, 100% { transform: scale(1); }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   SCENE 3 — Match a client. 12s loop.
+   SCENE 3 — Match a client via ClientPicker. 12s loop.
+   Reproduces the actual ClientPicker popover (portal-style dropdown).
    ────────────────────────────────────────────────────────────────────────── */
+
 .scene-cli-stage { position: relative; height: 360px; }
+
+/* Single transaction row in the table */
 .scene-cli-row {
-  display: grid; grid-template-columns: 1fr auto;
-  gap: 10px; padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 80px 70px 1fr 1fr 110px;
+  gap: 8px; align-items: center;
+  padding: 10px 12px;
+  background: var(--surface);
   border-bottom: 1px solid var(--inner-border);
-  font-size: 12px;
+  font-size: 11px;
+}
+.scene-cli-row .date {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-size: 10px; color: var(--text-3);
+}
+.scene-cli-row .gain { color: var(--accent); font-family: var(--font-ibm-plex-mono), ui-monospace, monospace; font-size: 11px; }
+.scene-cli-row .loss { color: var(--red);    font-family: var(--font-ibm-plex-mono), ui-monospace, monospace; font-size: 11px; }
+
+/* The empty "+ client" placeholder vs the assigned chip — they swap */
+.scene-cli-target {
+  position: relative; height: 18px;
 }
 .scene-cli-empty {
-  color: var(--text-4); font-style: italic;
+  position: absolute; left: 0; top: 0;
+  font-size: 11px; color: var(--text-3);
+  border: 1px dashed var(--inner-border);
+  border-radius: 4px; padding: 1px 6px;
   animation: scnCliEmpty 12s ease infinite;
 }
 @keyframes scnCliEmpty {
-  0%, 60%  { opacity: 1; }
-  65%,100% { opacity: 0; }
+  0%, 60% { opacity: 1; }
+  65%,100%{ opacity: 0; }
 }
 .scene-cli-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px 8px; border-radius: 999px;
-  background: var(--blue-chip-bg, color-mix(in srgb, var(--blue) 12%, transparent));
+  position: absolute; left: 0; top: 0;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--blue-chip-bg, color-mix(in srgb, var(--blue) 14%, transparent));
   color: var(--blue);
-  font-size: 11px; font-weight: 500;
+  border: 1px solid color-mix(in srgb, var(--blue) 18%, transparent);
+  font-size: 11px;
   opacity: 0; transform: scale(0.92);
   animation: scnCliChip 12s ease infinite;
 }
 @keyframes scnCliChip {
   0%, 65%  { opacity: 0; transform: scale(0.85); }
-  70%      { opacity: 1; transform: scale(1.06); }
+  70%      { opacity: 1; transform: scale(1.07); }
   74%,100% { opacity: 1; transform: scale(1); }
 }
+.scene-cli-chip .av {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  font-size: 8px; font-weight: 700;
+  background: color-mix(in srgb, var(--blue) 25%, transparent);
+}
+
+/* The popover */
 .scene-cli-popover {
   position: absolute;
-  top: 64px; left: 50%; transform: translateX(-50%);
-  width: 270px;
+  top: 70px; right: 12px;
+  width: 240px;
   background: var(--surface);
   border: 1px solid var(--border-hi);
   border-radius: 10px;
-  box-shadow: 0 24px 40px rgba(0,0,0,0.45);
-  padding: 8px;
-  z-index: 8;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24);
+  overflow: hidden;
+  z-index: 10;
   opacity: 0;
   animation: scnCliPop 12s ease infinite;
 }
 @keyframes scnCliPop {
-  0%,8%    { opacity: 0; transform: translate(-50%, -4px); pointer-events: none; }
-  12%,60%  { opacity: 1; transform: translate(-50%, 0);   }
-  64%,100% { opacity: 0; transform: translate(-50%, -2px); }
+  0%, 8%    { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+  12%, 60%  { opacity: 1; transform: translateY(0); }
+  64%, 100% { opacity: 0; transform: translateY(-2px); }
 }
+
+.scene-cli-search-wrap { padding: 8px; }
 .scene-cli-search {
-  height: 30px; padding: 0 10px;
-  background: var(--bg);
-  border: 1px solid var(--inner-border);
-  border-radius: 7px;
-  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  width: 100%; height: 26px; padding: 0 10px;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 5px;
   font-size: 11px; color: var(--text-1);
   display: flex; align-items: center;
 }
 .scene-cli-typed {
   display: inline-block; overflow: hidden; white-space: nowrap;
-  animation: scnCliType 12s steps(5) infinite;
+  animation: scnCliType 12s steps(4) infinite;
 }
 @keyframes scnCliType {
   0%, 14%  { width: 0; }
-  26%, 60% { width: 5ch; }
+  26%, 60% { width: 4ch; }
   64%,100% { width: 0; }
 }
+
+.scene-cli-list { display: flex; flex-direction: column; }
 .scene-cli-option {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px; border-radius: 6px;
-  font-size: 12px; color: var(--text-2);
-  transition: background 0.2s;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  font-size: 11px; color: var(--text-1);
+  border-left: 2px solid transparent;
+  transition: background 0.18s;
 }
 .scene-cli-option .av {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: var(--raised-hi); color: var(--text-2);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 600;
-  border: 1px solid var(--border);
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--blue-chip-bg, color-mix(in srgb, var(--blue) 14%, transparent));
+  color: var(--blue);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700;
 }
+.scene-cli-option .meta { flex: 1; min-width: 0; }
+.scene-cli-option .meta .name { font-size: 11px; color: var(--text-1); }
+.scene-cli-option .meta .handle { font-size: 9px; color: var(--text-3); margin-left: 4px; }
+
+/* The "hit" option highlights when query "Anna" matches it */
 .scene-cli-option.hit { animation: scnCliHit 12s ease infinite; }
 @keyframes scnCliHit {
-  0%, 40%   { background: transparent; }
-  44%, 60%  { background: var(--accent-lo); color: var(--text-1); }
-  64%,100%  { background: transparent; }
+  0%, 40%  { background: transparent; border-left-color: transparent; }
+  44%, 60% { background: rgba(255,255,255,0.05); border-left-color: var(--blue); }
+  64%,100% { background: transparent; border-left-color: transparent; }
 }
+/* Other options collapse out when query filters them */
 .scene-cli-option.miss { animation: scnCliMiss 12s ease infinite; }
 @keyframes scnCliMiss {
-  0%, 28%   { opacity: 1; height: 38px; padding: 8px 10px; }
-  32%,100%  { opacity: 0; height: 0; padding: 0 10px; }
+  0%, 28%  { opacity: 1; max-height: 36px; padding-top: 7px; padding-bottom: 7px; }
+  32%, 60% { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+  64%,100% { opacity: 1; max-height: 36px; padding-top: 7px; padding-bottom: 7px; }
+}
+
+.scene-cli-create {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  font-size: 11px; color: var(--accent);
+  border-top: 1px solid var(--inner-border);
+  opacity: 0;
+  animation: scnCliCreate 12s ease infinite;
+}
+@keyframes scnCliCreate {
+  0%, 26%  { opacity: 0; }
+  30%, 60% { opacity: 1; }
+  64%,100% { opacity: 0; }
+}
+.scene-cli-create .plus {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--green-chip-bg, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   SCENE 4 — CSV import. 12s loop.
+   SCENE 4 — CSV import via Data Hub. 10s loop.
+   Reproduces the actual DataImport inline form.
    ────────────────────────────────────────────────────────────────────────── */
+
 .scene-csv-stage {
-  position: relative; height: 320px;
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px;
+  position: relative; height: 230px;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 28px;
 }
-.scene-csv-zone {
-  width: 100%; height: 100%;
-  border: 1.5px dashed var(--inner-border);
-  border-radius: 14px;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 10px;
+.scene-csv-form {
+  display: flex; align-items: center; gap: 10px;
+}
+.scene-csv-choose {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 32px; padding: 0 14px;
+  background: var(--inner-border); color: var(--text-5);
+  border-radius: 6px; font-size: 12px; font-weight: 500;
   position: relative;
-  animation: scnCsvZone 12s ease infinite;
+  animation: scnCsvChoose 10s ease infinite;
 }
-@keyframes scnCsvZone {
-  0%,15%  { background: transparent; border-color: var(--inner-border); }
-  18%,28% { background: var(--accent-lo); border-color: var(--accent); }
-  32%,100%{ background: transparent; border-color: var(--inner-border); }
+@keyframes scnCsvChoose {
+  0%, 14%  { color: var(--text-5); }
+  18%, 100% { color: var(--text-2); }
 }
-.scene-csv-file {
-  position: absolute; left: 50%; top: -20px;
-  width: 56px; height: 70px;
-  background: var(--surface); border: 1px solid var(--border-hi);
+.scene-csv-filename {
+  display: inline-block; overflow: hidden; white-space: nowrap;
+  animation: scnCsvFilename 10s steps(18) infinite;
+}
+@keyframes scnCsvFilename {
+  0%, 14%  { width: 0; }
+  20%, 100% { width: 18ch; }
+}
+.scene-csv-import {
+  height: 32px; padding: 0 14px;
+  background: var(--accent); color: var(--surface);
+  border-radius: 6px; font-size: 12px; font-weight: 500;
+  display: inline-flex; align-items: center;
+  animation: scnCsvImportBtn 10s ease infinite;
+}
+@keyframes scnCsvImportBtn {
+  0%, 28%  { transform: scale(1); box-shadow: 0 0 0 0 transparent; opacity: 0.5; }
+  30%, 50% { opacity: 1; }
+  32%      { transform: scale(0.94); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+  36%      { transform: scale(1);    box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent); }
+  40%, 60% { transform: scale(1); }
+  62%      { opacity: 0.5; }
+  100%     { opacity: 0.5; }
+}
+.scene-csv-import .label-importing { display: none; }
+/* When state = uploading, show "Importing…" text */
+.scene-csv-import.uploading-toggle .label-import { animation: scnCsvLblImport 10s steps(1) infinite; }
+.scene-csv-import.uploading-toggle .label-importing { animation: scnCsvLblImporting 10s steps(1) infinite; }
+@keyframes scnCsvLblImport    { 0%,40%{opacity:1;display:inline;} 44%,68%{opacity:0;display:none;} 72%,100%{opacity:1;display:inline;} }
+@keyframes scnCsvLblImporting { 0%,40%{opacity:0;display:none;}   44%,68%{opacity:1;display:inline;} 72%,100%{opacity:0;display:none;} }
+
+/* Result chip */
+.scene-csv-result {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: var(--green-alert-bg, color-mix(in srgb, var(--accent) 8%, transparent));
+  border: 1px solid var(--green-alert-border, color-mix(in srgb, var(--accent) 25%, transparent));
   border-radius: 6px;
-  transform: translate(-50%, 0) rotate(-6deg);
-  box-shadow: 0 12px 24px rgba(0,0,0,0.45);
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: flex-end;
-  padding-bottom: 8px;
-  font-size: 9px; color: var(--accent);
-  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
-  animation: scnCsvFile 12s ease infinite;
-}
-.scene-csv-file::before {
-  content: ""; position: absolute; top: 8px; left: 8px; right: 8px; height: 2px;
-  background: var(--inner-border); box-shadow: 0 4px 0 var(--inner-border), 0 8px 0 var(--inner-border);
-}
-@keyframes scnCsvFile {
-  0%       { transform: translate(-50%, -120%) rotate(-12deg); opacity: 0; }
-  10%      { transform: translate(-50%, -120%) rotate(-12deg); opacity: 1; }
-  22%      { transform: translate(-50%, 30%)   rotate(-2deg);  opacity: 1; }
-  40%      { transform: translate(-50%, 50%)   rotate(0);      opacity: 0; }
-  100%     { transform: translate(-50%, 50%)   rotate(0);      opacity: 0; }
-}
-.scene-csv-label {
-  font-size: 13px; color: var(--text-3);
-  animation: scnCsvLabel 12s ease infinite;
-}
-@keyframes scnCsvLabel {
-  0%,15%  { opacity: 1; }
-  18%,42% { opacity: 0; }
-  45%,100%{ opacity: 1; }
-}
-.scene-csv-progress {
-  width: 60%; height: 4px; border-radius: 4px;
-  background: var(--inner-border); position: relative; overflow: hidden;
+  font-size: 13px;
   opacity: 0;
-  animation: scnCsvProgFade 12s ease infinite;
+  animation: scnCsvResult 10s ease infinite;
 }
-@keyframes scnCsvProgFade {
-  0%,28%  { opacity: 0; }
-  32%,68% { opacity: 1; }
-  72%,100%{ opacity: 0; }
+@keyframes scnCsvResult {
+  0%, 70%  { opacity: 0; transform: translateY(4px); }
+  74%, 96% { opacity: 1; transform: translateY(0); }
+  98%,100% { opacity: 0; }
 }
-.scene-csv-progress::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 0%;
-  background: var(--accent);
-  animation: scnCsvProg 12s linear infinite;
-}
-@keyframes scnCsvProg {
-  0%,30% { width: 0%; }
-  68%    { width: 100%; }
-  100%   { width: 100%; }
-}
-.scene-csv-success {
-  font-size: 13px; color: var(--accent); font-weight: 500;
-  display: flex; align-items: center; gap: 6px;
-  opacity: 0;
-  animation: scnCsvSuccess 12s ease infinite;
-}
-@keyframes scnCsvSuccess {
-  0%,72%  { opacity: 0; transform: translateY(4px); }
-  76%,94% { opacity: 1; transform: translateY(0); }
-  98%,100%{ opacity: 0; }
+.scene-csv-result .ok { color: var(--accent); font-weight: 500; }
+.scene-csv-result .meta { color: var(--text-3); font-size: 12px; }
+
+.scene-csv-hint {
+  font-size: 11px; color: var(--text-4); margin-top: auto;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   FIFO mini-strip — the "spread" idea. Gentle 8s loop.
+   FIFO mini-strip — kept from before.
    ────────────────────────────────────────────────────────────────────────── */
 .scene-fifo-bars {
   display: flex; align-items: flex-end; gap: 14px;
@@ -574,12 +810,11 @@
 .scene-fifo-bar .col { height: var(--h); }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Reduced motion: keep things still. Final state of each scene already
-   shows a useful "after" picture, so freezing at 95% is acceptable. */
+   Reduced motion — freeze. Final state is informative on its own. */
 @media (prefers-reduced-motion: reduce) {
   .help-stage, .help-stage *,
   .scene-tx-stage *, .scene-wal-stage *, .scene-cli-stage *, .scene-csv-stage *,
-  .scene-fifo-bar .col, .help-cursor, .help-caret, .help-sheen::before {
+  .scene-fifo-bar .col, .help-caret, .help-sheen::before {
     animation: none !important;
     transition: none !important;
   }

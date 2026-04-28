@@ -192,94 +192,53 @@ function RelatedGrid({ items }: { items: { href: string; title: string; body: st
   );
 }
 
-/* ── Animated scene ───────────────────────────────────────────────────── */
+/* ── Animated scene — recreates the real Wallets desktop UI ──────────── */
 
 function WalletScene() {
   return (
     <div className="scene-wal-stage">
-      {/* Add form */}
+      {/* Add wallet form — exactly the bar you see at the top of /app/wallets */}
       <div className="scene-wal-form">
         <div className="scene-wal-input">
           <span className="scene-wal-typed">TXyZ7n6sjeu5R3aBvwaW2pYqRLXmJp9aGd</span>
           <span className="help-caret" />
         </div>
-        <span className="scene-wal-chain">
-          <span className="dot" />
-          TRON
+        <div className="scene-wal-label-input">Hot wallet · main</div>
+        <span className="scene-wal-chain-trigger">
+          <span className="real-chain real-chain-tron">TRON</span>
         </span>
         <span className="scene-wal-add">Add wallet</span>
       </div>
 
-      {/* Wallet rows list */}
-      <div style={{ padding: "12px 14px" }}>
-        {/* Existing wallet */}
-        <div
-          className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-2 py-2.5"
-          style={{ borderBottom: "1px solid var(--inner-border)" }}
-        >
-          <div className="min-w-0">
-            <p className="text-[13px] font-medium" style={{ color: "var(--text-1)" }}>
-              Treasury
-            </p>
-            <p
-              className="truncate font-mono text-[10.5px]"
-              style={{ color: "var(--text-3)" }}
-            >
-              0x4c…9aF1 · ETH
-            </p>
-          </div>
-          <span
-            className="rounded-full px-2 py-0.5 text-[10px]"
-            style={{
-              color: "var(--accent)",
-              background: "var(--accent-lo)",
-              border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
-            }}
-          >
-            ● Synced
-          </span>
-          <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-            12,407 tx
-          </span>
+      {/* Table head */}
+      <div className="scene-wal-thead">
+        <span>Chain</span>
+        <span>Address</span>
+        <span>Label</span>
+        <span>Sync</span>
+        <span>Auto</span>
+      </div>
+
+      {/* Existing wallet — Treasury on ETH, already synced */}
+      <div className="scene-wal-row">
+        <span className="real-chain real-chain-eth">Ethereum</span>
+        <span className="addr">0x4c2a…9aF1</span>
+        <span className="label">Treasury</span>
+        <span className="real-status done"><span className="dot" />Done <span style={{ color: "var(--text-5)", marginLeft: 4 }}>(12,407 txs)</span></span>
+        <span className="auto">24 h</span>
+      </div>
+
+      {/* New wallet — appears, status flips Idle → Syncing… → Done */}
+      <div className="scene-wal-row scene-wal-newrow">
+        <span className="real-chain real-chain-tron">TRON</span>
+        <span className="addr">TXyZ7n6s…Jp9aGd</span>
+        <span className="label" style={{ color: "var(--text-3)" }}>Hot wallet · main</span>
+        <div className="scene-wal-newstatus">
+          <span className="real-status idle"><span className="dot" />Idle</span>
+          <span className="real-status running"><span className="dot" />Syncing…</span>
+          <span className="real-status done"><span className="dot" />Done <span style={{ color: "var(--text-5)", marginLeft: 4 }}>(127 txs)</span></span>
         </div>
-
-        {/* New wallet — animates in */}
-        <div className="scene-wal-row">
-          <div
-            className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-2 py-2.5"
-            style={{ borderBottom: "1px solid var(--inner-border)" }}
-          >
-            <div className="min-w-0">
-              <p className="text-[13px] font-medium" style={{ color: "var(--text-1)" }}>
-                <span className="font-mono text-[12px]">TXyZ…aGd</span>
-                <span className="ml-2 text-[10px]" style={{ color: "var(--text-4)" }}>
-                  TRON
-                </span>
-              </p>
-              <p className="font-mono text-[10.5px]" style={{ color: "var(--text-3)" }}>
-                no label
-              </p>
-            </div>
-
-            <div className="relative flex h-[18px] w-[80px] items-center justify-end">
-              <span className="scene-wal-status syncing">
-                <span style={{ marginRight: 6 }}>●</span>Syncing…
-              </span>
-              <span className="scene-wal-status synced absolute inset-0 flex items-center justify-end">
-                <span style={{ marginRight: 6 }}>●</span>Synced
-              </span>
-            </div>
-
-            <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-              just now
-            </span>
-          </div>
-
-          {/* Progress under the row */}
-          <div className="px-2 pb-2 pt-1.5">
-            <div className="scene-wal-progress" />
-          </div>
-        </div>
+        <span className="scene-wal-import-btn">Import</span>
       </div>
     </div>
   );

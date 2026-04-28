@@ -159,138 +159,84 @@ function RelatedGrid({ items }: { items: { href: string; title: string; body: st
   );
 }
 
-/* ── Animated scene ───────────────────────────────────────────────────── */
+/* ── Animated scene — recreates the real ClientPicker on a tx row ───── */
 
 function ClientScene() {
   return (
     <div className="scene-cli-stage">
-      <div style={{ padding: 12 }}>
-        {/* Existing matched row */}
-        <div className="scene-cli-row">
-          <div>
-            <p className="text-[12.5px]" style={{ color: "var(--text-2)" }}>
-              <span className="font-mono">26 Apr</span> · <span style={{ color: "var(--red)" }}>−500 EUR</span>{" "}
-              <span style={{ color: "var(--text-4)" }}>→</span>{" "}
-              <span style={{ color: "var(--accent)" }}>+520 USDT</span>
-            </p>
-            <p className="mt-0.5 text-[10.5px]" style={{ color: "var(--text-4)" }}>
-              Exchange · #a7c2…
-            </p>
-          </div>
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-            style={{
-              background: "color-mix(in srgb, var(--blue) 14%, transparent)",
-              color: "var(--blue)",
-            }}
-          >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--blue)" }} />
-            Pavel L.
-          </span>
-        </div>
+      {/* A small slice of the Transactions table — three rows, the middle
+          one has an unmatched client cell that we'll match in the demo. */}
 
-        {/* Target row — toggles between empty and chip */}
-        <div className="scene-cli-row" style={{ position: "relative" }}>
-          <div>
-            <p className="text-[12.5px]" style={{ color: "var(--text-2)" }}>
-              <span className="font-mono">27 Apr</span> · <span style={{ color: "var(--red)" }}>−1,200 USD</span>{" "}
-              <span style={{ color: "var(--text-4)" }}>→</span>{" "}
-              <span style={{ color: "var(--accent)" }}>+1,290 USDT</span>
-            </p>
-            <p className="mt-0.5 text-[10.5px]" style={{ color: "var(--text-4)" }}>
-              Exchange · #6f4e…
-            </p>
-          </div>
-          <div style={{ position: "relative", minWidth: 100, textAlign: "right" }}>
-            <span className="scene-cli-empty text-[12px]">— click to match</span>
-            <span
-              className="scene-cli-chip"
-              style={{ position: "absolute", right: 0, top: -2 }}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--blue)" }} />
-              Anna K.
-            </span>
-          </div>
-        </div>
-
-        {/* Other rows for ambience */}
-        <div className="scene-cli-row" style={{ opacity: 0.6 }}>
-          <div>
-            <p className="text-[12.5px]" style={{ color: "var(--text-2)" }}>
-              <span className="font-mono">25 Apr</span> · <span style={{ color: "var(--red)" }}>−250 USD</span>{" "}
-              <span style={{ color: "var(--text-4)" }}>→</span>{" "}
-              <span style={{ color: "var(--accent)" }}>+248 USDT</span>
-            </p>
-            <p className="mt-0.5 text-[10.5px]" style={{ color: "var(--text-4)" }}>
-              Exchange · #19a3…
-            </p>
-          </div>
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px]"
-            style={{
-              background: "color-mix(in srgb, var(--blue) 14%, transparent)",
-              color: "var(--blue)",
-            }}
-          >
-            Marko D.
-          </span>
-        </div>
+      {/* Row 1 — already matched to Pavel L. */}
+      <div className="scene-cli-row">
+        <span className="date">2026-04-27 14:09</span>
+        <span className="real-pill real-pill-exchange">Exchange</span>
+        <span className="gain">+520.00 USDT</span>
+        <span className="loss">−500.00 EUR</span>
+        <span className="real-client-chip">
+          <span className="av">P</span>Pavel L.
+        </span>
       </div>
 
-      {/* Picker popover */}
+      {/* Row 2 — the target row. "+ client" placeholder swaps to Anna K. chip. */}
+      <div className="scene-cli-row" style={{ position: "relative" }}>
+        <span className="date">2026-04-27 11:32</span>
+        <span className="real-pill real-pill-exchange">Exchange</span>
+        <span className="gain">+1,290.40 USDT</span>
+        <span className="loss">−1,200.00 USD</span>
+        <span className="scene-cli-target">
+          <span className="scene-cli-empty">+ client</span>
+          <span className="scene-cli-chip">
+            <span className="av">A</span>Anna K.
+          </span>
+        </span>
+      </div>
+
+      {/* Row 3 — already matched, ambience */}
+      <div className="scene-cli-row">
+        <span className="date">2026-04-26 19:50</span>
+        <span className="real-pill real-pill-exchange">Exchange</span>
+        <span className="gain">+248.00 USDT</span>
+        <span className="loss">−250.00 USD</span>
+        <span className="real-client-chip">
+          <span className="av">M</span>Marko D.
+        </span>
+      </div>
+
+      {/* The actual ClientPicker portal popover, anchored over row 2. */}
       <div className="scene-cli-popover" aria-hidden>
-        <div className="scene-cli-search">
-          <span className="scene-cli-typed">Anna_</span>
-          <span className="help-caret" />
+        <div className="scene-cli-search-wrap">
+          <div className="scene-cli-search">
+            <span className="scene-cli-typed">Anna</span>
+            <span className="help-caret" />
+          </div>
         </div>
-        <div className="mt-2 flex flex-col gap-0.5">
+        <div className="scene-cli-list">
           <div className="scene-cli-option hit">
             <span className="av">A</span>
-            <div className="flex-1">
-              <p className="text-[12.5px]" style={{ color: "var(--text-1)" }}>
-                Anna Karenina
-              </p>
-              <p className="text-[10.5px]" style={{ color: "var(--text-4)" }}>
-                @anna_k · 14 transactions
-              </p>
+            <div className="meta">
+              <span className="name">Anna Karenina</span>
+              <span className="handle">@anna_k</span>
             </div>
           </div>
           <div className="scene-cli-option miss">
             <span className="av">A</span>
-            <div className="flex-1">
-              <p className="text-[12.5px]" style={{ color: "var(--text-2)" }}>
-                Andrei Smirnov
-              </p>
-              <p className="text-[10.5px]" style={{ color: "var(--text-4)" }}>
-                @asmirnov · 3 transactions
-              </p>
+            <div className="meta">
+              <span className="name">Andrei Smirnov</span>
+              <span className="handle">@asmirnov</span>
             </div>
           </div>
           <div className="scene-cli-option miss">
             <span className="av">M</span>
-            <div className="flex-1">
-              <p className="text-[12.5px]" style={{ color: "var(--text-2)" }}>
-                Marko Despotović
-              </p>
-              <p className="text-[10.5px]" style={{ color: "var(--text-4)" }}>
-                @marko_d · 47 transactions
-              </p>
+            <div className="meta">
+              <span className="name">Marko Despotović</span>
+              <span className="handle">@marko_d</span>
             </div>
           </div>
-        </div>
-        <div
-          className="mt-1 border-t pt-2 px-2 text-[11px]"
-          style={{ borderColor: "var(--inner-border)", color: "var(--text-4)" }}
-        >
-          Press <kbd
-            style={{
-              padding: "1px 5px",
-              border: "1px solid var(--inner-border)",
-              borderRadius: 4,
-              fontSize: 10,
-              fontFamily: "var(--font-ibm-plex-mono), ui-monospace, monospace",
-            }}
-          >Enter</kbd> to create &ldquo;Anna&rdquo;
+          <div className="scene-cli-create">
+            <span className="plus">+</span>
+            Create &ldquo;Anna&rdquo;
+          </div>
         </div>
       </div>
     </div>
