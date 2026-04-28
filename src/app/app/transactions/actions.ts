@@ -417,3 +417,179 @@ export async function deleteTransaction(formData: FormData) {
   });
   revalidatePath("/app", "layout");
 }
+
+// ── Split a transaction into multiple parts ──────────────────────────────────
+//
+// Use case: a single on-chain payment that, in business terms, is several
+// distinct transactions — e.g. one USDT outflow that's part-Exchange with
+// Client A and part-Debt repayment to Client B. This action:
+//
+//   1. Validates that for each (currency, direction) the sum of part amounts
+//      equals the original tx's totals (within 1e-9 tolerance).
+//   2. Soft-deletes the original.
+//   3. Creates N new transactions sharing the original's metadata (timestamp,
+//      txHash, chain, fromAddress, toAddress, location, type) and stamped
+//      with `splitFromTxId` for audit. Each child gets its own
+//      transactionType, comment, status, leg set, and (optional) client.
+//
+// Returns { success: true } on success, { error: string } on validation/DB
+// failure — same shape as updateTransaction so the form can render errors.
+
+interface SplitLeg { direction: "in" | "out" | "fee"; amount: string; currency: string; location?: string | null }
+interface SplitPart {
+  transactionType: string | null;
+  status: string | null;
+  comment: string | null;
+  clientId: string | null;
+  legs: SplitLeg[];
+}
+
+export async function splitTransaction(
+  _prev: { error?: string; success?: boolean } | null,
+  formData: FormData,
+): Promise<{ error?: string; success?: boolean }> {
+  const { orgId, userId, userEmail } = await getOrgContext();
+  const txId = formData.get("tx_id") as string | null;
+  const partsJson = formData.get("parts_json") as string | null;
+  if (!txId || !partsJson) return { error: "Missing tx_id or parts." };
+
+  let parts: SplitPart[];
+  try {
+    parts = JSON.parse(partsJson) as SplitPart[];
+  } catch {
+    return { error: "Couldn't parse split parts." };
+  }
+  if (!Array.isArray(parts) || parts.length < 2) {
+    return { error: "Need at least 2 parts to split." };
+  }
+
+  // Load the original
+  const [orig] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.id, txId), eq(transactions.organizationId, orgId)))
+    .limit(1);
+  if (!orig) return { error: "Transaction not found." };
+  if (orig.deletedAt) return { error: "Transaction is already deleted." };
+
+  const origLegs = await db.select().from(transactionLegs).where(eq(transactionLegs.transactionId, txId));
+
+  // Build expected per-(direction|currency) totals from the original legs.
+  const expected = new Map<string, number>();
+  for (const l of origLegs) {
+    if (!l.amount || !l.currency) continue;
+    const k = `${l.direction}|${l.currency.toUpperCase()}`;
+    expected.set(k, (expected.get(k) ?? 0) + Number(l.amount));
+  }
+
+  // Sum the parts the same way.
+  const got = new Map<string, number>();
+  for (const p of parts) {
+    for (const leg of p.legs) {
+      if (!leg.amount || !leg.currency) continue;
+      const amt = Number(leg.amount);
+      if (!Number.isFinite(amt)) return { error: `Invalid amount "${leg.amount}".` };
+      const k = `${leg.direction}|${leg.currency.toUpperCase()}`;
+      got.set(k, (got.get(k) ?? 0) + amt);
+    }
+  }
+
+  // Compare every key from both sides; any missing/extra/mismatched key fails.
+  const TOL = 1e-9;
+  const allKeys = new Set([...expected.keys(), ...got.keys()]);
+  for (const k of allKeys) {
+    const want = expected.get(k) ?? 0;
+    const have = got.get(k) ?? 0;
+    if (Math.abs(want - have) > TOL) {
+      const [dir, cur] = k.split("|");
+      return { error: `Sum mismatch for ${dir} ${cur}: parts total ${have}, original was ${want}.` };
+    }
+  }
+
+  // Currencies referenced by parts must exist in the org. (origLegs already
+  // came from the same org, so their currencies are guaranteed; new currency
+  // codes can only appear via direct-typing in the form.)
+  const partCurrencies = Array.from(new Set(
+    parts.flatMap(p => p.legs.map(l => l.currency.toUpperCase()).filter(Boolean))
+  ));
+  if (partCurrencies.length > 0) await ensureCurrencies(orgId, partCurrencies);
+
+  // Verify every clientId actually belongs to this org before we trust it.
+  const clientIds = parts.map(p => p.clientId).filter((x): x is string => !!x);
+  const validClientIds = new Set<string>();
+  if (clientIds.length > 0) {
+    const rows = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(and(eq(clients.organizationId, orgId), inArray(clients.id, clientIds)));
+    for (const r of rows) validClientIds.add(r.id);
+  }
+
+  // ── All validation passed. Apply the split. ─────────────────────────────
+  // Soft-delete original.
+  await db
+    .update(transactions)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(transactions.id, txId), eq(transactions.organizationId, orgId)));
+
+  // Create child transactions.
+  const childIds: string[] = [];
+  for (const p of parts) {
+    const [child] = await db
+      .insert(transactions)
+      .values({
+        organizationId: orgId,
+        txHash: orig.txHash,
+        chain: orig.chain,
+        type: orig.type,
+        transactionType: p.transactionType ?? orig.transactionType,
+        timestamp: orig.timestamp,
+        fromAddress: orig.fromAddress,
+        toAddress: orig.toAddress,
+        location: orig.location,
+        comment: p.comment ?? null,
+        status: p.status ?? orig.status,
+        isMatched: !!p.clientId,
+        raw: orig.raw,
+        splitFromTxId: orig.id,
+      })
+      .returning({ id: transactions.id });
+
+    childIds.push(child.id);
+
+    // Insert legs for this part.
+    if (p.legs.length > 0) {
+      await db.insert(transactionLegs).values(
+        p.legs.map(l => ({
+          transactionId: child.id,
+          direction: l.direction,
+          amount: l.amount,
+          currency: l.currency.toUpperCase(),
+          location: l.location ?? null,
+        }))
+      );
+    }
+
+    // Assign client if any & valid. (transactionClients has no organizationId
+    // column — the transaction itself is org-scoped, which is enough.)
+    if (p.clientId && validClientIds.has(p.clientId)) {
+      await db.insert(transactionClients).values({
+        transactionId: child.id,
+        clientId: p.clientId,
+      });
+    }
+  }
+
+  await logAudit({
+    organizationId: orgId, userId, userEmail,
+    action: "transaction_split", entityType: "transaction", entityId: txId,
+    details: {
+      tx: txId.slice(0, 8),
+      parts: String(parts.length),
+      children: childIds.map(id => id.slice(0, 8)).join(","),
+    },
+  });
+
+  revalidatePath("/app", "layout");
+  return { success: true };
+}

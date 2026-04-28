@@ -42,6 +42,7 @@ const ACTION_LABEL: Record<string,string> = {
   transaction_created:"Created transaction",
   transaction_updated:"Edited transaction",
   transaction_deleted:"Deleted transaction",
+  transaction_split:"Split transaction",
   bulk_type_set:"Bulk set type",
   bulk_client_assigned:"Bulk assigned client",
   bulk_deleted:"Bulk deleted",

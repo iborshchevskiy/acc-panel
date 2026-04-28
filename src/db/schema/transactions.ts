@@ -32,6 +32,7 @@ export const transactions = pgTable(
     status: text("status"), // 'done' | 'in_process' | 'failed' | 'unknown'
     isMatched: boolean("is_matched").default(false).notNull(),
     raw: jsonb("raw"), // original CSV row preserved verbatim
+    splitFromTxId: uuid("split_from_tx_id"), // when set, this row is a child of a split — see splitTransaction action. No FK to keep semantics simple after the parent is soft-deleted.
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }), // soft delete — never hard-delete financial records
   },
@@ -49,6 +50,8 @@ export const transactions = pgTable(
     index("transactions_org_deleted_idx").on(t.organizationId, t.deletedAt),
     // Dashboard unmatched count: org + isMatched + deletedAt
     index("transactions_org_matched_idx").on(t.organizationId, t.isMatched, t.deletedAt),
+    // Split lineage lookup
+    index("transactions_split_from_idx").on(t.splitFromTxId),
   ]
 );
 

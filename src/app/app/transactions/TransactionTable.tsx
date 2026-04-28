@@ -4,6 +4,7 @@ import { useState, useTransition, useRef, useEffect, useActionState, useCallback
 import ClientPicker, { type ClientOption } from "./ClientPicker";
 import { deleteTransaction, bulkSetType, bulkAssignClient, bulkDelete, bulkSetStatus, updateTransaction, setTransactionStatus, setTransactionType, updateLeg, createLeg } from "./actions";
 import { trimTrailingZeros } from "@/lib/format";
+import SplitForm from "./SplitForm";
 
 export interface TxRow {
   id: string;
@@ -739,14 +740,29 @@ function LegStack({ legs, direction, txId, currencyCodes }: {
 
 interface EditLeg { amount: string; currency: string; location: string; }
 
-function InlineEditForm({ tx, legRows, txTypes, currencyCodes, onClose }: {
+function InlineEditForm({ tx, legRows, txTypes, currencyCodes, orgClients, onClose }: {
   tx: TxRow;
   legRows: LegRow[];
   txTypes: string[];
   currencyCodes: string[];
+  orgClients: ClientOption[];
   onClose: () => void;
 }) {
+  const [mode, setMode] = useState<"edit" | "split">("edit");
   const [state, action, pending] = useActionState(updateTransaction, null);
+
+  if (mode === "split") {
+    return (
+      <SplitForm
+        txId={tx.id}
+        originalLegs={legRows.map(l => ({ direction: l.direction, amount: l.amount, currency: l.currency, location: l.location }))}
+        txTypes={txTypes}
+        currencyCodes={currencyCodes}
+        orgClients={orgClients}
+        onCancel={() => setMode("edit")}
+      />
+    );
+  }
 
   const toLocalIso = (iso: string) => {
     const d = new Date(iso);
@@ -911,6 +927,20 @@ function InlineEditForm({ tx, legRows, txTypes, currencyCodes, onClose }: {
         <button type="button" onClick={onClose}
           className="text-xs transition-opacity hover:opacity-60" style={{ color: "var(--text-3)" }}>
           Cancel
+        </button>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setMode("split")}
+          className="h-7 rounded px-3 text-xs font-medium transition-opacity hover:opacity-80"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--amber) 10%, transparent)",
+            color: "var(--amber)",
+            border: "1px solid color-mix(in srgb, var(--amber) 28%, transparent)",
+          }}
+          title="Split this on-chain payment into multiple business transactions"
+        >
+          Split into parts ↶
         </button>
       </div>
     </form>
@@ -1171,6 +1201,7 @@ export default function TransactionTable({
                         legRows={legsByTx.get(tx.id) ?? []}
                         txTypes={txTypes}
                         currencyCodes={currencyCodes}
+                        orgClients={orgClients}
                         onClose={closeEdit}
                       />
                     </td>
