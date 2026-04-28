@@ -152,6 +152,14 @@ const SignOutIcon = () => (
   </svg>
 );
 
+const HelpIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ color: "var(--text-2)" }}>
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+    <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 1-1 1.7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    <circle cx="12" cy="17" r="0.9" fill="currentColor"/>
+  </svg>
+);
+
 interface SidebarProps {
   userEmail: string;
   orgName?: string;
@@ -433,6 +441,16 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
               >
                 <SettingsIcon /> Settings
               </Link>
+              <Link
+                href="/app/help"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-3 py-3 rounded-md text-sm"
+                style={pathname.startsWith("/app/help")
+                  ? { backgroundColor: "var(--accent-lo)", color: "var(--accent)" }
+                  : { color: "var(--text-2)" }}
+              >
+                <HelpIcon /> Help &amp; manual
+              </Link>
               <button
                 type="button"
                 onClick={toggleTheme}
@@ -639,6 +657,19 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
             >
               <SettingsIcon />
               Settings
+            </Link>
+
+            {/* Help & manual */}
+            <Link
+              href="/app/help"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm transition-colors"
+              style={{ color: "var(--text-2)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
+            >
+              <HelpIcon />
+              Help &amp; manual
             </Link>
 
             {/* Theme toggle */}

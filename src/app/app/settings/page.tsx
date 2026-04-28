@@ -211,6 +211,11 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               </a>
             );
           })}
+          <a href="/app/help"
+            className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors inline-flex items-center gap-1"
+            style={{ backgroundColor:"var(--surface)", color:"var(--accent)", border:"1px solid color-mix(in srgb, var(--accent) 30%, transparent)" }}>
+            ? Help
+          </a>
         </nav>
       </div>
 
@@ -237,6 +242,16 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               </a>
             );
           })}
+          <div className="my-2 mx-3" style={{ borderTop:"1px solid var(--surface-lo)" }} />
+          <a href="/app/help"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all"
+            style={{ color:"var(--text-3)" }}>
+            <span className="text-xs font-mono opacity-50">?</span>
+            <span className="font-medium">Help &amp; manual</span>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="ml-auto">
+              <path d="M2.5 7.5L7.5 2.5M7.5 2.5H3.5M7.5 2.5V6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </a>
         </nav>
 
         {/* account card at bottom */}
