@@ -286,7 +286,7 @@ export default function KycSection({ clientId, initial, documents }: Props) {
   }
 
   const fieldCls = "h-8 rounded-md px-3 text-sm outline-none focus:ring-1 focus:ring-emerald-500 w-full";
-  const fieldStyle = { backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid var(--inner-border)", color: "var(--text-1)" };
+  const fieldStyle = { backgroundColor: "color-mix(in srgb, var(--text-1) 5%, transparent)", border: "1px solid var(--inner-border)", color: "var(--text-1)" };
   const labelCls = "text-[10px] uppercase tracking-wider font-medium";
 
   return (

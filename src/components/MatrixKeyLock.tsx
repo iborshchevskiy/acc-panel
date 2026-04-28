@@ -6,9 +6,9 @@ import type { MatrixKeyData } from "./LockProvider";
 // ── constants ────────────────────────────────────────────────────────────────
 const GRID_COLS  = 6;
 const GRID_ROWS  = 9;
-const CELL_SIZE  = 56;   // px — slot pitch
-const CIRCLE     = 44;   // px — diameter of each circle (CELL_SIZE - gap)
-const PAT        = 20;   // pattern tiles this many × this many
+const CELL_DESKTOP = 56; // px — slot pitch on roomy screens
+const CELL_MOBILE  = 48; // px — slot pitch on narrow phones (< 380px viewport)
+const PAT          = 20; // pattern tiles this many × this many
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 export function generatePattern(): number[][] {
@@ -54,6 +54,10 @@ export default function MatrixKeyLock({
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
 
+  // Responsive cell size — collapses to a more compact pitch on narrow phones
+  // so the 6×9 grid still fits with side margins on a 360px-wide viewport.
+  const [cell, setCell] = useState<number>(CELL_DESKTOP);
+
   // Setup mode: which cell the user tapped
   const [selectedCell, setSelectedCell] = useState<{ x: number; y: number } | null>(null);
 
@@ -66,6 +70,18 @@ export default function MatrixKeyLock({
     setOy(Math.floor(Math.random() * PAT));
   }, []);
 
+  // Track viewport so cell size scales for narrow phones.
+  useEffect(() => {
+    function update() {
+      setCell(window.innerWidth < 380 ? CELL_MOBILE : CELL_DESKTOP);
+    }
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  const CIRCLE = cell - 12; // diameter of each circle = pitch − gap
+
   // ── drag handling ───────────────────────────────────────────────────────────
   function onPtrDown(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -77,8 +93,8 @@ export default function MatrixKeyLock({
 
   function onPtrMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!ptr.current) return;
-    const dx = (e.clientX - ptr.current.cx) / CELL_SIZE;
-    const dy = (e.clientY - ptr.current.cy) / CELL_SIZE;
+    const dx = (e.clientX - ptr.current.cx) / cell;
+    const dy = (e.clientY - ptr.current.cy) / cell;
     if (Math.abs(dx) > 0.06 || Math.abs(dy) > 0.06) hasDragged.current = true;
     setOx(ptr.current.ox0 - dx);
     setOy(ptr.current.oy0 - dy);
@@ -112,8 +128,8 @@ export default function MatrixKeyLock({
   function onContainerClick(e: React.MouseEvent<HTMLDivElement>) {
     if (mode !== "setup" || hasDragged.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const col  = Math.floor((e.clientX - rect.left)  / CELL_SIZE);
-    const row  = Math.floor((e.clientY - rect.top) / CELL_SIZE);
+    const col  = Math.floor((e.clientX - rect.left)  / cell);
+    const row  = Math.floor((e.clientY - rect.top) / cell);
     if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
       setSelectedCell({ x: col, y: row });
     }
@@ -126,8 +142,8 @@ export default function MatrixKeyLock({
   const fracY  = oy - floorY;
   const rCols  = GRID_COLS + 2;
   const rRows  = GRID_ROWS + 2;
-  const tx     = -(fracX + 1) * CELL_SIZE;
-  const ty     = -(fracY + 1) * CELL_SIZE;
+  const tx     = -(fracX + 1) * cell;
+  const ty     = -(fracY + 1) * cell;
 
   // "Live" snapped offsets — update as the user drags past the half-cell mark.
   // This lets the circles tick over to the next digit while you're still
@@ -140,19 +156,23 @@ export default function MatrixKeyLock({
     : null;
 
   // ── status colours ─────────────────────────────────────────────────────────
+  // Theme-aware: idle digits use --text-1 (near-black on Snow / Sepia,
+  // near-white on Midnight / Amber / Plum). Error / success use the
+  // semantic --red and --accent vars so they read correctly on every theme.
   const accentColor =
-    status === "error"   ? "rgba(239,68,68,1)"
-    : status === "success" ? "rgba(16,185,129,1)"
-    : "rgba(255,255,255,0.92)";
+    status === "error"     ? "var(--red)"
+    : status === "success" ? "var(--accent)"
+    :                        "var(--text-1)";
 
   const borderColor =
-    status === "error"   ? "rgba(239,68,68,0.55)"
-    : status === "success" ? "rgba(16,185,129,0.55)"
-    : "rgba(255,255,255,0.06)";
+    status === "error"     ? "color-mix(in srgb, var(--red) 55%, transparent)"
+    : status === "success" ? "color-mix(in srgb, var(--accent) 55%, transparent)"
+    :                        "var(--inner-border)";
+
   const glowColor =
-    status === "error"   ? "rgba(239,68,68,0.18)"
-    : status === "success" ? "rgba(16,185,129,0.22)"
-    : "transparent";
+    status === "error"     ? "color-mix(in srgb, var(--red) 18%, transparent)"
+    : status === "success" ? "color-mix(in srgb, var(--accent) 22%, transparent)"
+    :                        "transparent";
 
   return (
     <div className="flex flex-col items-center gap-5">
@@ -168,14 +188,15 @@ export default function MatrixKeyLock({
       <div
         className="relative select-none"
         style={{
-          width:  GRID_COLS * CELL_SIZE,
-          height: GRID_ROWS * CELL_SIZE,
+          width:  GRID_COLS * cell,
+          height: GRID_ROWS * cell,
+          maxWidth: "100%",
           overflow: "hidden",
           borderRadius: 20,
           border: `1px solid ${borderColor}`,
-          boxShadow: `0 0 32px ${glowColor}, 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)`,
+          boxShadow: `0 0 32px ${glowColor}, 0 8px 32px color-mix(in srgb, var(--text-1) 22%, transparent), inset 0 1px 0 color-mix(in srgb, var(--text-1) 4%, transparent)`,
           cursor: dragging ? "grabbing" : "grab",
-          background: "radial-gradient(ellipse at center, rgba(255,255,255,0.015), transparent 70%), var(--bg)",
+          background: "radial-gradient(ellipse at center, color-mix(in srgb, var(--text-1) 2%, transparent), transparent 70%), var(--bg)",
           transition: "border-color 0.3s, box-shadow 0.3s",
           animation: status === "error" ? "mkShake 0.5s ease-in-out" : undefined,
           touchAction: "none",
@@ -192,7 +213,7 @@ export default function MatrixKeyLock({
           style={{
             position: "absolute",
             display: "grid",
-            gridTemplateColumns: `repeat(${rCols}, ${CELL_SIZE}px)`,
+            gridTemplateColumns: `repeat(${rCols}, ${cell}px)`,
             transform: `translate(${tx}px, ${ty}px)`,
             transition: dragging ? "none" : "transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1)",
             willChange: "transform",
@@ -206,13 +227,14 @@ export default function MatrixKeyLock({
             return (
               <div key={i}
                 style={{
-                  width: CELL_SIZE, height: CELL_SIZE,
+                  width: cell, height: cell,
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                 <span style={{
                   fontSize: 17, fontWeight: 500,
                   fontFamily: "var(--font-ibm-plex-mono, monospace)",
-                  lineHeight: 1, color: "rgba(255,255,255,0.10)",
+                  lineHeight: 1,
+                  color: "color-mix(in srgb, var(--text-1) 16%, transparent)",
                   userSelect: "none",
                 }}>
                   {d}
@@ -228,8 +250,8 @@ export default function MatrixKeyLock({
           style={{
             position: "absolute", inset: 0,
             display: "grid",
-            gridTemplateColumns: `repeat(${GRID_COLS}, ${CELL_SIZE}px)`,
-            gridAutoRows: `${CELL_SIZE}px`,
+            gridTemplateColumns: `repeat(${GRID_COLS}, ${cell}px)`,
+            gridAutoRows: `${cell}px`,
             pointerEvents: "none",
           }}
         >
@@ -241,29 +263,29 @@ export default function MatrixKeyLock({
               selectedCell?.x === col && selectedCell?.y === row;
 
             const circleBorder =
-              status === "error"   ? "rgba(239,68,68,0.45)"
-              : status === "success" ? "rgba(16,185,129,0.55)"
-              : isSelected         ? "rgba(16,185,129,0.65)"
-              : "rgba(255,255,255,0.10)";
+              status === "error"     ? "color-mix(in srgb, var(--red) 45%, transparent)"
+              : status === "success" ? "color-mix(in srgb, var(--accent) 55%, transparent)"
+              : isSelected           ? "color-mix(in srgb, var(--accent) 65%, transparent)"
+              :                        "var(--inner-border)";
 
             const circleBg =
-              isSelected            ? "rgba(16,185,129,0.10)"
-              : status === "error"  ? "rgba(239,68,68,0.06)"
-              : status === "success" ? "rgba(16,185,129,0.06)"
-              : "rgba(255,255,255,0.025)";
+              isSelected             ? "color-mix(in srgb, var(--accent) 10%, transparent)"
+              : status === "error"   ? "color-mix(in srgb, var(--red) 6%, transparent)"
+              : status === "success" ? "color-mix(in srgb, var(--accent) 6%, transparent)"
+              :                        "color-mix(in srgb, var(--text-1) 4%, transparent)";
 
             const digitColor =
-              isSelected            ? "rgba(16,185,129,1)"
-              : status === "error"  ? "rgba(239,68,68,1)"
-              : status === "success" ? "rgba(16,185,129,1)"
-              : accentColor;
+              isSelected             ? "var(--accent)"
+              : status === "error"   ? "var(--red)"
+              : status === "success" ? "var(--accent)"
+              :                        accentColor;
 
             const digitShadow = isSelected
-              ? "0 0 14px rgba(16,185,129,0.55), 0 0 28px rgba(16,185,129,0.25)"
+              ? "0 0 14px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 28px color-mix(in srgb, var(--accent) 25%, transparent)"
               : status === "success"
-              ? "0 0 14px rgba(16,185,129,0.45)"
+              ? "0 0 14px color-mix(in srgb, var(--accent) 45%, transparent)"
               : status === "error"
-              ? "0 0 14px rgba(239,68,68,0.4)"
+              ? "0 0 14px color-mix(in srgb, var(--red) 40%, transparent)"
               : "none";
 
             return (
@@ -279,8 +301,8 @@ export default function MatrixKeyLock({
                     border: `1.5px solid ${circleBorder}`,
                     display: "flex", alignItems: "center", justifyContent: "center",
                     boxShadow: isSelected
-                      ? "0 0 0 1px rgba(16,185,129,0.18), inset 0 0 12px rgba(16,185,129,0.06)"
-                      : "inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.25)",
+                      ? "0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), inset 0 0 12px color-mix(in srgb, var(--accent) 6%, transparent)"
+                      : "inset 0 1px 0 color-mix(in srgb, var(--text-1) 4%, transparent), 0 1px 2px color-mix(in srgb, var(--text-1) 12%, transparent)",
                     transition: "background-color 0.18s, border-color 0.18s, box-shadow 0.25s",
                   }}
                 >
@@ -301,10 +323,12 @@ export default function MatrixKeyLock({
           })}
         </div>
 
-        {/* Vignette */}
+        {/* Vignette — theme-aware: darkens edges using --text-1 so it
+            shows correctly on light themes (where pure-black would
+            scream) and dark themes alike. */}
         <div aria-hidden style={{
           position: "absolute", inset: 0, pointerEvents: "none",
-          background: "radial-gradient(ellipse 90% 90% at 50% 50%, transparent 60%, rgba(0,0,0,0.35) 100%)",
+          background: "radial-gradient(ellipse 90% 90% at 50% 50%, transparent 60%, color-mix(in srgb, var(--text-1) 18%, transparent) 100%)",
         }} />
       </div>
 

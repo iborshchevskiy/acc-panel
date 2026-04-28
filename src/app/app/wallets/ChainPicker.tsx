@@ -14,7 +14,7 @@ type ChainValue = typeof CHAINS[number]["value"];
 const dropdownPanel: React.CSSProperties = {
   backgroundColor: "var(--surface)",
   border: "1px solid var(--border-hi)",
-  boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04)",
+  boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 color-mix(in srgb, var(--text-1) 5%, transparent)",
   borderRadius: "10px",
   overflow: "hidden",
 };
@@ -82,7 +82,7 @@ export default function ChainPicker({ defaultValue = "TRON" }: { defaultValue?: 
                 onMouseLeave={() => setHovered(null)}
                 className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-left transition-colors"
                 style={{
-                  backgroundColor: isHovered ? "rgba(255,255,255,0.05)" : "transparent",
+                  backgroundColor: isHovered ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                   borderLeft: `2px solid ${isSelected ? chain.color : "transparent"}`,
                   color: isSelected ? chain.color : "var(--text-1)",
                 }}

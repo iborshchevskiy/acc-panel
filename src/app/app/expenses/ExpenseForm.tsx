@@ -10,7 +10,7 @@ const inputStyle = { borderColor: "var(--inner-border)", color: "var(--text-1)" 
 const dropdownPanel: React.CSSProperties = {
   backgroundColor: "var(--surface)",
   border: "1px solid var(--border-hi)",
-  boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04)",
+  boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 color-mix(in srgb, var(--text-1) 5%, transparent)",
   borderRadius: "10px",
   overflow: "hidden",
 };
@@ -56,7 +56,7 @@ function CurrencyCombobox({ value, codes, onChange }: { value: string; codes: st
                   className="flex items-center justify-between w-full px-3 py-2 text-xs font-mono text-left"
                   style={{
                     color: isSel ? "var(--accent)" : "var(--text-1)",
-                    backgroundColor: hovered === c ? "rgba(255,255,255,0.05)" : "transparent",
+                    backgroundColor: hovered === c ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                     borderLeft: `2px solid ${isSel ? "var(--accent)" : "transparent"}`,
                   }}>
                   <span>{c}</span>
@@ -161,7 +161,7 @@ function ClientField({ clients }: { clients: ClientOption[] }) {
                   className="flex items-center gap-2.5 w-full px-3 py-2.5 text-xs text-left"
                   style={{
                     color: "var(--text-1)",
-                    backgroundColor: hovered === c.id ? "rgba(255,255,255,0.05)" : "transparent",
+                    backgroundColor: hovered === c.id ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                     borderLeft: `2px solid ${hovered === c.id ? "var(--blue)" : "transparent"}`,
                   }}>
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold"
@@ -178,7 +178,7 @@ function ClientField({ clients }: { clients: ClientOption[] }) {
                   className="flex items-center gap-2.5 w-full px-3 py-2.5 text-xs text-left"
                   style={{
                     color: "var(--accent)",
-                    backgroundColor: hovered === "__create__" ? "rgba(16,185,129,0.06)" : "transparent",
+                    backgroundColor: hovered === "__create__" ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
                     borderTop: filtered.length > 0 ? "1px solid var(--inner-border)" : "none",
                     borderLeft: `2px solid ${hovered === "__create__" ? "var(--accent)" : "transparent"}`,
                   }}>

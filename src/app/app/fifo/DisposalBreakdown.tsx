@@ -51,7 +51,7 @@ function LegChip({ leg }: { leg: LegInfo }) {
       </span>
       {leg.location && (
         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-          style={{ backgroundColor: "rgba(255,255,255,0.04)", color: "var(--text-4)", border: "1px solid var(--inner-border)" }}
+          style={{ backgroundColor: "color-mix(in srgb, var(--text-1) 5%, transparent)", color: "var(--text-4)", border: "1px solid var(--inner-border)" }}
           title={leg.location}>
           {shortAddr(leg.location)}
         </span>

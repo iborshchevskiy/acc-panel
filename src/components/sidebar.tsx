@@ -637,7 +637,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
             style={{
               backgroundColor: "var(--surface)",
               border: "1px solid var(--border-hi)",
-              boxShadow: "0 -8px 32px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04)",
+              boxShadow: "0 -8px 32px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 color-mix(in srgb, var(--text-1) 5%, transparent)",
               minWidth: 180,
             }}
           >
@@ -652,7 +652,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
               onClick={() => setMenuOpen(false)}
               className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm transition-colors"
               style={{ color: "var(--text-2)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "color-mix(in srgb, var(--text-1) 6%, transparent)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
             >
               <SettingsIcon />
@@ -665,7 +665,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
               onClick={() => setMenuOpen(false)}
               className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm transition-colors"
               style={{ color: "var(--text-2)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "color-mix(in srgb, var(--text-1) 6%, transparent)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
             >
               <HelpIcon />
@@ -678,7 +678,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
               onClick={toggleTheme}
               className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm transition-colors"
               style={{ color: "var(--text-2)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "color-mix(in srgb, var(--text-1) 6%, transparent)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
             >
               {theme === "dark" || theme === "amber" || theme === "plum" ? <SunIcon /> : <MoonIcon />}
@@ -692,7 +692,7 @@ export default function Sidebar({ userEmail, orgName }: SidebarProps) {
                 onClick={() => { setMenuOpen(false); lock(); }}
                 className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm transition-colors"
                 style={{ color: "var(--text-2)" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "color-mix(in srgb, var(--text-1) 6%, transparent)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
               >
                 <LockIcon />

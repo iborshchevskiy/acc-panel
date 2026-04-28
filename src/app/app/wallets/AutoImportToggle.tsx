@@ -27,7 +27,7 @@ const dropdownPanel: React.CSSProperties = {
   zIndex: 9999,
   backgroundColor: "var(--surface)",
   border: "1px solid var(--border-hi)",
-  boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04)",
+  boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 color-mix(in srgb, var(--text-1) 5%, transparent)",
   borderRadius: "10px",
   overflow: "hidden",
   width: "176px",
@@ -117,7 +117,7 @@ function IntervalPicker({ value, onChange }: IntervalPickerProps) {
                 className="flex items-center justify-between w-full px-3 py-2 text-xs text-left"
                 style={{
                   color: isSel ? "var(--accent)" : "var(--text-1)",
-                  backgroundColor: hovered === p.value ? "rgba(255,255,255,0.05)" : "transparent",
+                  backgroundColor: hovered === p.value ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                   borderLeft: `2px solid ${isSel ? "var(--accent)" : "transparent"}`,
                 }}>
                 {p.label}
@@ -136,7 +136,7 @@ function IntervalPicker({ value, onChange }: IntervalPickerProps) {
                 className="flex items-center justify-between w-full px-3 py-2 text-xs text-left"
                 style={{
                   color: isCustom ? "var(--accent)" : "var(--text-2)",
-                  backgroundColor: hovered === "__custom__" ? "rgba(255,255,255,0.05)" : "transparent",
+                  backgroundColor: hovered === "__custom__" ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                   borderLeft: `2px solid ${isCustom ? "var(--accent)" : "transparent"}`,
                 }}>
                 <span>Custom{isCustom ? `: ${intervalLabel(value)}` : ""}</span>

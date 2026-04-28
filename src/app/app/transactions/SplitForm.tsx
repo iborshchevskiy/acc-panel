@@ -613,7 +613,7 @@ function SplitClientField({
               onMouseDown={(e) => { e.preventDefault(); onSelect(c); setQuery(""); setOpen(false); }}
               className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left transition-colors"
               style={{ color: "var(--text-1)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "color-mix(in srgb, var(--text-1) 6%, transparent)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
             >
               <span

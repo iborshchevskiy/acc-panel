@@ -182,7 +182,7 @@ export default function ClientPicker({ txId, current, clients }: Props) {
             backgroundColor: "var(--surface)",
             border: "1px solid var(--border-hi)",
             borderRadius: "10px",
-            boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04)",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 color-mix(in srgb, var(--text-1) 5%, transparent)",
             overflow: "hidden",
           }}
         >
@@ -229,7 +229,7 @@ export default function ClientPicker({ txId, current, clients }: Props) {
                   color: "var(--text-1)",
                   borderLeft: `2px solid ${isAssigned ? "var(--blue)" : "transparent"}`,
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "color-mix(in srgb, var(--text-1) 6%, transparent)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
               >
                 <span
@@ -263,7 +263,7 @@ export default function ClientPicker({ txId, current, clients }: Props) {
                   borderLeft: "2px solid transparent",
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(16,185,129,0.06)";
+                  (e.currentTarget as HTMLElement).style.backgroundColor = "color-mix(in srgb, var(--accent) 8%, transparent)";
                   (e.currentTarget as HTMLElement).style.borderLeftColor = "var(--accent)";
                 }}
                 onMouseLeave={(e) => {

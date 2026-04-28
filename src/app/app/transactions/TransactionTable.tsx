@@ -58,7 +58,7 @@ const STATUS_OPTIONS: TxStatus[] = ["done", "in_process", "failed", "unknown"];
 const dropdownPanel: React.CSSProperties = {
   backgroundColor: "var(--surface)",
   border: "1px solid var(--border-hi)",
-  boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04)",
+  boxShadow: "0 16px 48px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.24), inset 0 1px 0 color-mix(in srgb, var(--text-1) 5%, transparent)",
   borderRadius: "10px",
   overflow: "hidden",
 };
@@ -103,7 +103,7 @@ function BulkTypePicker({ txTypes, onSelect }: { txTypes: string[]; onSelect: (t
                   onMouseLeave={() => setHovered(null)}
                   className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left transition-colors"
                   style={{
-                    backgroundColor: hovered === t ? "rgba(255,255,255,0.05)" : "transparent",
+                    backgroundColor: hovered === t ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                     borderLeft: `2px solid ${hovered === t ? color : "transparent"}`,
                     color: "var(--text-1)",
                   }}
@@ -123,7 +123,7 @@ function BulkTypePicker({ txTypes, onSelect }: { txTypes: string[]; onSelect: (t
               onMouseLeave={() => setHovered(null)}
               className="flex items-center w-full px-3 py-2 text-xs text-left"
               style={{
-                backgroundColor: hovered === "__clear__" ? "rgba(255,255,255,0.05)" : "transparent",
+                backgroundColor: hovered === "__clear__" ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                 borderLeft: "2px solid transparent",
                 color: "var(--text-3)",
               }}
@@ -189,7 +189,7 @@ function BulkClientPicker({ clients, onSelect }: { clients: ClientOption[]; onSe
                 onMouseLeave={() => setHovered(null)}
                 className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left"
                 style={{
-                  backgroundColor: hovered === c.id ? "rgba(255,255,255,0.05)" : "transparent",
+                  backgroundColor: hovered === c.id ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                   borderLeft: `2px solid ${hovered === c.id ? "var(--blue)" : "transparent"}`,
                   color: "var(--text-1)",
                 }}
@@ -245,7 +245,7 @@ function BulkStatusPicker({ onSelect }: { onSelect: (s: string | null) => void }
                   onMouseLeave={() => setHovered(null)}
                   className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left transition-colors"
                   style={{
-                    backgroundColor: hovered === s ? "rgba(255,255,255,0.05)" : "transparent",
+                    backgroundColor: hovered === s ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                     borderLeft: `2px solid ${hovered === s ? cfg.color : "transparent"}`,
                     color: "var(--text-1)",
                   }}>
@@ -264,7 +264,7 @@ function BulkStatusPicker({ onSelect }: { onSelect: (s: string | null) => void }
               onMouseLeave={() => setHovered(null)}
               className="flex items-center w-full px-3 py-2 text-xs text-left"
               style={{
-                backgroundColor: hovered === "__clear__" ? "rgba(255,255,255,0.05)" : "transparent",
+                backgroundColor: hovered === "__clear__" ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                 borderLeft: "2px solid transparent",
                 color: "var(--text-3)",
               }}>
@@ -303,7 +303,7 @@ function StatusPicker({ txId, current }: { txId: string; current: string | null 
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen(v => !v)}
         className="group flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors"
-        style={{ backgroundColor: open ? "rgba(255,255,255,0.05)" : "transparent" }}
+        style={{ backgroundColor: open ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent" }}
         title="Change status">
         {cfg ? (
           <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
@@ -339,7 +339,7 @@ function StatusPicker({ txId, current }: { txId: string; current: string | null 
                   onMouseLeave={() => setHovered(null)}
                   className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left"
                   style={{
-                    backgroundColor: hovered === s ? "rgba(255,255,255,0.05)" : "transparent",
+                    backgroundColor: hovered === s ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                     borderLeft: `2px solid ${hovered === s ? c.color : "transparent"}`,
                   }}>
                   <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
@@ -359,7 +359,7 @@ function StatusPicker({ txId, current }: { txId: string; current: string | null 
                 onMouseLeave={() => setHovered(null)}
                 className="flex items-center w-full px-3 py-1.5 text-xs"
                 style={{
-                  backgroundColor: hovered === "__clear__" ? "rgba(255,255,255,0.05)" : "transparent",
+                  backgroundColor: hovered === "__clear__" ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                   borderLeft: "2px solid transparent",
                   color: "var(--text-3)",
                 }}>
@@ -399,7 +399,7 @@ function TypePicker({ txId, current, txTypes }: { txId: string; current: string 
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen(v => !v)}
         className="group flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors"
-        style={{ backgroundColor: open ? "rgba(255,255,255,0.05)" : "transparent" }}
+        style={{ backgroundColor: open ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent" }}
         title="Change type">
         {optimistic && color ? (
           <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
@@ -435,7 +435,7 @@ function TypePicker({ txId, current, txTypes }: { txId: string; current: string 
                   onMouseLeave={() => setHovered(null)}
                   className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left"
                   style={{
-                    backgroundColor: hovered === t ? "rgba(255,255,255,0.05)" : "transparent",
+                    backgroundColor: hovered === t ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                     borderLeft: `2px solid ${hovered === t ? c : "transparent"}`,
                   }}>
                   <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
@@ -455,7 +455,7 @@ function TypePicker({ txId, current, txTypes }: { txId: string; current: string 
                 onMouseLeave={() => setHovered(null)}
                 className="flex items-center w-full px-3 py-1.5 text-xs"
                 style={{
-                  backgroundColor: hovered === "__clear__" ? "rgba(255,255,255,0.05)" : "transparent",
+                  backgroundColor: hovered === "__clear__" ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                   borderLeft: "2px solid transparent",
                   color: "var(--text-3)",
                 }}>
@@ -516,7 +516,7 @@ function CurrencyCombobox({ nameAttr, value, codes, onChange }: {
                 className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs font-mono text-left"
                 style={{
                   color: c === value ? "var(--accent)" : "var(--text-1)",
-                  backgroundColor: hovered === c ? "rgba(255,255,255,0.05)" : "transparent",
+                  backgroundColor: hovered === c ? "color-mix(in srgb, var(--text-1) 6%, transparent)" : "transparent",
                   borderLeft: `2px solid ${c === value ? "var(--accent)" : "transparent"}`,
                 }}>
                 {c}{c === value && <span style={{ color: "var(--accent)", fontSize: 9 }}>✓</span>}
