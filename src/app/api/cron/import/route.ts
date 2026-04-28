@@ -16,14 +16,16 @@ function parseIntervalMs(v: string): number {
 }
 
 export async function GET(req: NextRequest) {
-  // Vercel sends CRON_SECRET automatically; require it if set
+  // Require CRON_SECRET only when it is configured (Vercel auto-injects it for cron projects).
+  // Without it (local dev), requests pass through so the endpoint can be tested manually.
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (secret && auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const now = new Date();
+  const force = !secret && req.nextUrl.searchParams.get("force") === "1"; // dev-only
 
   const targets = await db
     .select({
@@ -42,13 +44,18 @@ export async function GET(req: NextRequest) {
 
   const due = targets.filter((t) => {
     if (t.syncStatus === "running") return false;
+    if (force) return true;
     if (!t.lastSyncAt) return true; // never synced → always due
     const intervalMs = parseIntervalMs(t.autoImportInterval ?? "24h");
     return now.getTime() - new Date(t.lastSyncAt).getTime() >= intervalMs;
   });
 
+  const stuck    = targets.filter((t) => t.syncStatus === "running").length;
+  const notYetDue = targets.filter((t) => t.syncStatus !== "running" && t.lastSyncAt &&
+    now.getTime() - new Date(t.lastSyncAt).getTime() < parseIntervalMs(t.autoImportInterval ?? "24h")).length;
+
   if (due.length === 0) {
-    return NextResponse.json({ triggered: 0, checked: targets.length });
+    return NextResponse.json({ triggered: 0, checked: targets.length, stuck, notYetDue });
   }
 
   // Run all due imports in parallel and wait for them all to finish.
