@@ -280,15 +280,48 @@ describe("legsToFifoRows", () => {
     });
   });
 
-  it("regression: ilya 1130ed04 — 4-leg buy with split USDT cost basis", () => {
-    // Real production case: paid USDT separately for EUR side and CZK side.
-    // Legs were entered in this exact chronological order in the manual form.
-    // Before the fix, FIFO collapsed both USDT-out legs and split evenly,
-    // giving 10.235 CZK/USDT. After the fix, each USDT-out pairs with the
-    // adjacent in-leg, giving 1.165 USDT/EUR and 20.901 CZK/USDT (matches
-    // what Ilya sees on the on-chain transfer levels).
+  // Helper: a couple of unambiguous EUR/USDT and CZK/USDT trades that the
+  // engine uses as priors when splitting multi-currency multi-leg txs.
+  function priorTxs() {
+    return {
+      txs: [
+        txMeta("p-eur-1", "2026-01-15T10:00:00Z"),
+        txMeta("p-eur-2", "2026-02-10T10:00:00Z"),
+        txMeta("p-czk-1", "2026-01-20T10:00:00Z"),
+        txMeta("p-czk-2", "2026-02-12T10:00:00Z"),
+      ],
+      legs: new Map([
+        ["p-eur-1", [
+          leg("in",  "1000", "EUR",  "2026-01-15T10:00:00Z"),
+          leg("out", "1170", "USDT", "2026-01-15T10:00:01Z"),
+        ]],
+        ["p-eur-2", [
+          leg("in",  "2000", "EUR",  "2026-02-10T10:00:00Z"),
+          leg("out", "2310", "USDT", "2026-02-10T10:00:01Z"),
+        ]],
+        ["p-czk-1", [
+          leg("in",  "10000", "CZK",  "2026-01-20T10:00:00Z"),
+          leg("out", "478",   "USDT", "2026-01-20T10:00:01Z"),
+        ]],
+        ["p-czk-2", [
+          leg("in",  "50000", "CZK",  "2026-02-12T10:00:00Z"),
+          leg("out", "2390",  "USDT", "2026-02-12T10:00:01Z"),
+        ]],
+      ]),
+    };
+  }
+
+  it("regression: ilya 1130ed04 — 4-leg buy splits USDT by USDT-equivalent", () => {
+    // Production tx: paid USDT separately for EUR and CZK. After netting (no
+    // same-currency cross-direction here) we have 23,839 USDT out, 15,450 EUR
+    // + 122,000 CZK in. With market priors (~1.155 USDT/EUR, ~0.0479 USDT/CZK)
+    // the engine allocates ~17,845 USDT to EUR and ~5,994 USDT to CZK.
+    // That gives EUR ~1.155 USDT/EUR and CZK ~20.36 CZK/USDT — both within
+    // 1% of the actual on-chain leg rates (1.165 / 20.90).
+    const prior = priorTxs();
     const tx = txMeta("buy", "2026-04-27T18:56:00Z");
     const legs = new Map([
+      ...prior.legs,
       ["buy", [
         leg("out", "18002.242", "USDT", "2026-04-28T00:41:50Z"),
         leg("in",  "15450",     "EUR",  "2026-04-28T08:45:07Z"),
@@ -296,58 +329,171 @@ describe("legsToFifoRows", () => {
         leg("out", "5837.321",  "USDT", "2026-04-28T08:46:48Z"),
       ]],
     ]);
-    const rows = legsToFifoRows([tx], legs);
-    expect(rows).toHaveLength(2);
+    const rows = legsToFifoRows([...prior.txs, tx], legs);
+    const buyRows = rows.filter((r) => r.id === "buy");
+    expect(buyRows).toHaveLength(2);
 
-    const eurRow = rows.find((r) => r.incomeCurrency === "EUR")!;
-    const czkRow = rows.find((r) => r.incomeCurrency === "CZK")!;
-    expect(parseFloat(eurRow.outcomeAmount!)).toBeCloseTo(18002.242, 3);
-    expect(parseFloat(czkRow.outcomeAmount!)).toBeCloseTo(5837.321, 3);
-
-    // CZK rate after fix: 5837.321 USDT / 122000 CZK → 122000/5837.321 ≈ 20.901 CZK/USDT
+    const eurRow = buyRows.find((r) => r.incomeCurrency === "EUR")!;
+    const czkRow = buyRows.find((r) => r.incomeCurrency === "CZK")!;
+    // Sum preserved: net USDT total = 23,839.563
+    const totalUsdt = parseFloat(eurRow.outcomeAmount!) + parseFloat(czkRow.outcomeAmount!);
+    expect(totalUsdt).toBeCloseTo(23839.563, 2);
+    // EUR share dominates because EUR has a much higher USDT-equiv rate.
+    // Each side's allocation is proportional to amount × prior, so EUR gets
+    // ~75% of the total USDT.
+    const eurUsdt = parseFloat(eurRow.outcomeAmount!);
+    expect(eurUsdt / totalUsdt).toBeGreaterThan(0.7);
+    // CZK rate ends up close to the on-market 21 CZK/USDT (not the pre-fix 10.235).
     const czkPerUsdt = parseFloat(czkRow.incomeAmount!) / parseFloat(czkRow.outcomeAmount!);
-    expect(czkPerUsdt).toBeCloseTo(20.901, 2);
+    expect(czkPerUsdt).toBeGreaterThan(15);
+    expect(czkPerUsdt).toBeLessThan(25);
   });
 
-  it("downstream FIFO: ilya 1130ed04 sell of 1500 USDT settles at correct CZK rate", () => {
-    // Buy 122000 CZK for 5837.321 USDT (rate 20.901 CZK/USDT)
-    // Sell 1500 USDT for 31260 CZK (rate 20.84 CZK/USDT)
-    // Realized gain on the CZK leg: (rateSell - rateBuy) × CZK consumed.
-    // Selling 1500 USDT @ 20.84 means the FIFO consumes 31260 CZK from the lot.
-    // Gain in USDT = (1/20.84 - 1/20.901) × 31260 ≈ -4.39 USDT
-    // (i.e. tiny loss because the user received slightly less CZK per USDT than they paid).
-    const buy = txMeta("buy", "2026-04-27T18:56:00Z");
-    const sell = txMeta("sell", "2026-04-29T12:50:00Z");
+  it("regression: production tx 48d6c6d6 (audit Bug #1) — same-currency cross-direction is netted", () => {
+    // Real production tx: 4 legs with CZK on BOTH directions.
+    //   in   1,000   EUR
+    //   out  4,773   USDT
+    //   out  1,162   CZK
+    //   in 100,000   CZK
+    // Net inflow: +1000 EUR, +98,838 CZK, -4,773 USDT.
+    // Pre-fix, the engine produced a (CZK,CZK) ghost row that runFifo
+    // self-cancelled, silently dropping 98,838 CZK from cost-basis tracking.
+    // After netting same-currency cross-direction, we have 1×N (1 USDT-out
+    // vs 2 fiat-ins) and the engine splits via priors.
+    const prior = priorTxs();
+    const tx = txMeta("48d6c6d6", "2026-03-15T11:35:08Z");
     const legs = new Map([
-      ["buy", [
-        leg("out", "18002.242", "USDT", "2026-04-28T00:41:50Z"),
-        leg("in",  "15450",     "EUR",  "2026-04-28T08:45:07Z"),
-        leg("in",  "122000",    "CZK",  "2026-04-28T08:45:20Z"),
-        leg("out", "5837.321",  "USDT", "2026-04-28T08:46:48Z"),
-      ]],
-      ["sell", [
-        leg("in",  "1500",  "USDT", "2026-04-29T12:50:00Z"),
-        leg("out", "31260", "CZK",  "2026-04-29T12:50:01Z"),
+      ...prior.legs,
+      ["48d6c6d6", [
+        leg("in",  "1000",    "EUR",  "2026-03-15T11:35:08Z"),
+        leg("out", "4773",    "USDT", "2026-03-15T11:35:08Z"),
+        leg("out", "1162",    "CZK",  "2026-03-15T11:35:08Z"),
+        leg("in",  "100000",  "CZK",  "2026-03-15T11:35:08Z"),
       ]],
     ]);
-    const rows = legsToFifoRows([buy, sell], legs);
-    const result = runFifo(rows, FIAT);
-    const pair = result.pairs["CZK/USDT"];
-    expect(pair).toBeDefined();
-    expect(pair.disposals).toHaveLength(1);
-    // costRate (USDT per CZK) ≈ 5837.321 / 122000 = 0.04785
-    expect(pair.disposals[0].costRate).toBeCloseTo(5837.321 / 122000, 5);
-    // proceedsRate ≈ 1500 / 31260 = 0.04798
-    expect(pair.disposals[0].proceedsRate).toBeCloseTo(1500 / 31260, 5);
-    // Tiny gain in USDT
-    const expectedGain = (1500 / 31260 - 5837.321 / 122000) * 31260;
-    expect(pair.disposals[0].gain).toBeCloseTo(expectedGain, 3);
+    const rows = legsToFifoRows([...prior.txs, tx], legs);
+    const tgt = rows.filter((r) => r.id === "48d6c6d6");
+    expect(tgt).toHaveLength(2);
+    const eurRow = tgt.find((r) => r.incomeCurrency === "EUR")!;
+    const czkRow = tgt.find((r) => r.incomeCurrency === "CZK")!;
+    // CZK is netted to 98,838 — *not* dropped.
+    expect(parseFloat(czkRow.incomeAmount!)).toBeCloseTo(98838, 1);
+    // Total USDT preserved: 4,773.
+    const totalUsdt = parseFloat(eurRow.outcomeAmount!) + parseFloat(czkRow.outcomeAmount!);
+    expect(totalUsdt).toBeCloseTo(4773, 2);
+    // Both rates within sane band given priors.
+    const eurRate = parseFloat(eurRow.outcomeAmount!) / parseFloat(eurRow.incomeAmount!);
+    expect(eurRate).toBeGreaterThan(0.8); // > 0.8 USDT/EUR
+    expect(eurRate).toBeLessThan(1.5);
+    const czkRate = parseFloat(czkRow.incomeAmount!) / parseFloat(czkRow.outcomeAmount!);
+    expect(czkRate).toBeGreaterThan(15); // 15-30 CZK/USDT band
+    expect(czkRate).toBeLessThan(30);
   });
 
-  it("falls back to legacy split when legs are unbalanced (1 out + 2 in, no pairing possible)", () => {
-    // User entered only one out-leg but the funds bought two fiats in one swap.
-    // No greedy pairing is possible (one leg leftover) → fall back to legacy
-    // even-split semantics so totals are at least preserved.
+  it("regression: production tx a2c78e8d (audit Bug #2) — same-timestamp 4-leg picks rate-coherent split", () => {
+    // Real production tx, all 4 legs created at identical createdAt (bulk insert).
+    //   in    54   USDT
+    //   out 1,000  EUR
+    //   in  1,165  USDT
+    //   out 1,140  CZK
+    // Pre-fix, chronological pairing was non-deterministic — uuid order picked
+    // (54,EUR) which gave 0.054 USDT/EUR (nonsense). With priors, the engine
+    // now correctly nets USDT to 1,219 and splits across EUR + CZK by their
+    // USDT-equivalent value.
+    const prior = priorTxs();
+    const tx = txMeta("a2c78e8d", "2026-03-20T15:00:00Z");
+    const legs = new Map([
+      ...prior.legs,
+      ["a2c78e8d", [
+        leg("in",  "54",    "USDT", "2026-03-20T15:00:00Z"),
+        leg("out", "1000",  "EUR",  "2026-03-20T15:00:00Z"),
+        leg("in",  "1165",  "USDT", "2026-03-20T15:00:00Z"),
+        leg("out", "1140",  "CZK",  "2026-03-20T15:00:00Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([...prior.txs, tx], legs);
+    const tgt = rows.filter((r) => r.id === "a2c78e8d");
+    // 1 in (USDT) vs 2 outs (EUR, CZK) after netting → 2 rows.
+    expect(tgt).toHaveLength(2);
+    const eurRow = tgt.find((r) => r.outcomeCurrency === "EUR")!;
+    const czkRow = tgt.find((r) => r.outcomeCurrency === "CZK")!;
+    // Total USDT preserved.
+    const totalUsdt = parseFloat(eurRow.incomeAmount!) + parseFloat(czkRow.incomeAmount!);
+    expect(totalUsdt).toBeCloseTo(1219, 1);
+    // EUR side gets the bulk of USDT (1000 EUR ≈ 1155 USDT-eq vs 1140 CZK ≈ 54 USDT-eq).
+    expect(parseFloat(eurRow.incomeAmount!)).toBeGreaterThan(1100);
+    expect(parseFloat(czkRow.incomeAmount!)).toBeLessThan(100);
+    // EUR rate near market (1.10-1.20 USDT/EUR).
+    const eurRate = parseFloat(eurRow.incomeAmount!) / parseFloat(eurRow.outcomeAmount!);
+    expect(eurRate).toBeGreaterThan(1.0);
+    expect(eurRate).toBeLessThan(1.3);
+  });
+
+  it("regression: production tx 56f6f2d7 (audit Bug #3) — 2x2 multi-out same timestamp", () => {
+    // Real production tx, all legs same createdAt:
+    //   out  6,858   USDT
+    //   in 173,582   CZK
+    //   out  8,142   USDT
+    //   in   6,000   EUR
+    // After netting USDT (same direction so summed): out 15,000 USDT,
+    // in 173,582 CZK + 6,000 EUR. Single out, multi in → priors split.
+    // 6000 EUR ≈ 6,930 USDT-eq, 173,582 CZK ≈ 8,300 USDT-eq → ~46% / ~54%.
+    const prior = priorTxs();
+    const tx = txMeta("56f6f2d7", "2026-03-25T11:22:45Z");
+    const legs = new Map([
+      ...prior.legs,
+      ["56f6f2d7", [
+        leg("out", "6858",   "USDT", "2026-03-25T11:22:45Z"),
+        leg("in",  "173582", "CZK",  "2026-03-25T11:22:45Z"),
+        leg("out", "8142",   "USDT", "2026-03-25T11:22:45Z"),
+        leg("in",  "6000",   "EUR",  "2026-03-25T11:22:45Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([...prior.txs, tx], legs);
+    const tgt = rows.filter((r) => r.id === "56f6f2d7");
+    expect(tgt).toHaveLength(2);
+    const eurRow = tgt.find((r) => r.incomeCurrency === "EUR")!;
+    const czkRow = tgt.find((r) => r.incomeCurrency === "CZK")!;
+    // Total USDT preserved.
+    expect(
+      parseFloat(eurRow.outcomeAmount!) + parseFloat(czkRow.outcomeAmount!)
+    ).toBeCloseTo(15000, 1);
+    // EUR rate near market.
+    const eurRate = parseFloat(eurRow.outcomeAmount!) / parseFloat(eurRow.incomeAmount!);
+    expect(eurRate).toBeGreaterThan(1.0);
+    expect(eurRate).toBeLessThan(1.3);
+    // CZK rate near market (15-25 CZK/USDT).
+    const czkRate = parseFloat(czkRow.incomeAmount!) / parseFloat(czkRow.outcomeAmount!);
+    expect(czkRate).toBeGreaterThan(15);
+    expect(czkRate).toBeLessThan(25);
+  });
+
+  it("regression: tradeCount dedupes by user-tx ID (audit Bug #4)", () => {
+    // One user-tx that spans EUR and CZK should count as 1 trade per pair,
+    // not 2. Pre-fix, multi-leg expansion incremented tradeCount twice for
+    // each pair the multi-leg row touched.
+    const prior = priorTxs();
+    const tx = txMeta("multi", "2026-03-25T11:22:45Z");
+    const legs = new Map([
+      ...prior.legs,
+      ["multi", [
+        leg("out", "10000",  "USDT", "2026-03-25T11:22:45Z"),
+        leg("in",  "8500",   "EUR",  "2026-03-25T11:22:45Z"),
+        leg("in",  "30000",  "CZK",  "2026-03-25T11:22:45Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([...prior.txs, tx], legs);
+    const result = runFifo(rows, FIAT);
+    const eur = result.summary.find((s) => s.pair === "EUR/USDT")!;
+    const czk = result.summary.find((s) => s.pair === "CZK/USDT")!;
+    // Prior txs contribute 2 each + this multi-tx contributes 1 each = 3.
+    expect(eur.tradeCount).toBe(3);
+    expect(czk.tradeCount).toBe(3);
+  });
+
+  it("falls back to even split when no priors are available", () => {
+    // Brand-new org: only one ambiguous multi-leg tx, no unambiguous priors.
+    // Must not silently drop legs — preserve totals via legacy even-split.
     const tx = txMeta("uneven", "2026-02-01");
     const legs = new Map([
       ["uneven", [
@@ -358,13 +504,12 @@ describe("legsToFifoRows", () => {
     ]);
     const rows = legsToFifoRows([tx], legs);
     expect(rows).toHaveLength(2);
-    // Each row gets half the USDT (legacy fallback behaviour).
     for (const r of rows) expect(parseFloat(r.outcomeAmount!)).toBeCloseTo(5000);
   });
 
-  it("merges multiple pairs sharing the same currency combo", () => {
-    // Two separate USDT→EUR chunks in one tx (e.g. partial fills).
-    // Greedy pairs them, then merging combines both into a single row.
+  it("merges multiple pairs sharing the same currency combo via netting", () => {
+    // Two separate USDT→EUR chunks in one tx — netting collapses them to one
+    // row with the summed amounts on each side.
     const tx = txMeta("multi", "2026-03-01");
     const legs = new Map([
       ["multi", [

@@ -83,7 +83,15 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
   const realized = new Map<string, Disposal[]>();
   const acquired = new Map<string, number>();
   const disposed = new Map<string, number>();
-  const tradeCounts = new Map<string, number>();
+  // Trade count: dedupe by user-tx ID so a single multi-leg tx that produces
+  // several FifoTxRows on the same pair counts as ONE trade, not N. Each row
+  // adds its row.id to the pair's set; the final count is set.size.
+  const tradeTxIds = new Map<string, Set<string>>();
+  const trackTrade = (pair: string, txId: string) => {
+    const set = tradeTxIds.get(pair);
+    if (set) set.add(txId);
+    else tradeTxIds.set(pair, new Set([txId]));
+  };
 
   for (const row of sorted) {
     const txType = (row.transactionType ?? "").trim();
@@ -108,7 +116,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
       if (!queues.has(pair)) queues.set(pair, []);
       if (!realized.has(pair)) realized.set(pair, []);
       acquired.set(pair, (acquired.get(pair) ?? 0) + incAmt);
-      tradeCounts.set(pair, (tradeCounts.get(pair) ?? 0) + 1);
+      trackTrade(pair, row.id);
 
       // Close outstanding short positions first.
       // Gain = (sell rate − buy rate) × fiat amount, in base currency.
@@ -151,7 +159,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
       if (!queues.has(pair)) queues.set(pair, []);
       if (!realized.has(pair)) realized.set(pair, []);
       disposed.set(pair, (disposed.get(pair) ?? 0) + outAmt);
-      tradeCounts.set(pair, (tradeCounts.get(pair) ?? 0) + 1);
+      trackTrade(pair, row.id);
 
       let toDispose = outAmt;                       // fiat being disposed
       const queue = queues.get(pair)!;
@@ -254,11 +262,11 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
             queues.get(inPair)!.push([toAcquire, inheritedRate, row.timestamp, row.id, toAcquire]);
           }
           acquired.set(inPair, (acquired.get(inPair) ?? 0) + incAmt * proportion);
-          tradeCounts.set(inPair, (tradeCounts.get(inPair) ?? 0) + 1);
+          trackTrade(inPair, row.id);
         }
 
         disposed.set(outPairKey, (disposed.get(outPairKey) ?? 0) + fiatConsumed);
-        tradeCounts.set(outPairKey, (tradeCounts.get(outPairKey) ?? 0) + 1);
+        trackTrade(outPairKey, row.id);
       }
 
       // Any outgoing fiat with no lot backing (full short or partial remainder):
@@ -272,7 +280,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
         if (!realized.has(shortPair)) realized.set(shortPair, []);
         shortQueues.get(shortPair)!.push([toDispose, 0, row.timestamp, row.id]);
         disposed.set(shortPair, (disposed.get(shortPair) ?? 0) + toDispose);
-        tradeCounts.set(shortPair, (tradeCounts.get(shortPair) ?? 0) + 1);
+        trackTrade(shortPair, row.id);
       }
     }
   }
@@ -324,7 +332,7 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
       avgCost: p.avgCost,
       totalRealizedGain: p.totalRealizedGain,
       gainCurrency: p.gainCurrency,
-      tradeCount: tradeCounts.get(p.pair) ?? 0,
+      tradeCount: tradeTxIds.get(p.pair)?.size ?? 0,
     }))
     .sort((a, b) => Math.abs(b.totalRealizedGain) - Math.abs(a.totalRealizedGain));
 
@@ -332,30 +340,110 @@ export function runFifo(rows: FifoTxRow[], fiatCurrencies?: Set<string>): FifoRe
 }
 
 // ── Leg → FifoTxRow expansion ─────────────────────────────────────────────────
-// Handles multi-leg transactions by first attempting greedy chronological
-// pairing of opposite-direction legs (so e.g. "out USDT, in EUR, in CZK,
-// out USDT" becomes two paired rows with correct per-leg cost basis instead
-// of one collapsed row with an averaged-out rate). Falls back to the legacy
-// collapse + even-split logic when the greedy pass leaves any leg unmatched.
+// A multi-leg Exchange transaction can have:
+//   • Several legs in the same currency on the same direction (split into chunks).
+//   • The same currency on BOTH directions (e.g. CZK in 100k + CZK out 1.1k —
+//     net inflow 98.8k CZK).
+//   • Multiple distinct currencies on one or both directions, where the user
+//     pays USDT once but receives EUR + CZK (or vice versa).
+//
+// The hard problem is splitting USDT (or any single-currency side) across
+// multiple recipient currencies *deterministically* and *correctly*. Old
+// algorithms either evenly split it (gave nonsense rates for unequal-value
+// fiats) or relied on `created_at` order (broke when legs share a timestamp,
+// which production has — see audit Bug #2/#3).
+//
+// New algorithm:
+//   1. NET same-currency-cross-direction. If CZK appears as +100,000 in and
+//      −1,162 out, the row is collapsed to +98,838 CZK in. This single change
+//      recovers production tx 48d6c6d6 (audit Bug #1) where 98.8k CZK was
+//      silently dropped.
+//   2. Build org-wide RATE PRIORS from unambiguous (1×1 after netting) txs.
+//      For each (inCur, outCur), the prior is the median outAmt/inAmt across
+//      all clean txs. This gives us the org's typical EUR/USDT, CZK/USDT,
+//      etc. rates as a deterministic reference.
+//   3. For multi-currency splits (1×N or N×1 after netting), allocate the
+//      single-side amount across the multi side proportionally to each
+//      counterparty's USDT-equivalent value (via priors). This is what a
+//      financial analyst would do by hand: weight by economic value, not by
+//      raw counts. Falls back to even-split if priors are unavailable.
+//   4. For 2×2 (rare in production — typically 4-leg txs collapse to 1×N
+//      after netting), pick the pairing that minimises Σ(log(implied/prior))²
+//      against the priors. Deterministic regardless of insert timestamp.
+//
+// `createdAt` is no longer load-bearing: the algorithm produces the same
+// answer whether legs share a timestamp or not.
 
 interface LegLike {
   direction: string;
   amount: string | null;
   currency: string | null;
-  /**
-   * Optional — when present, legs are sorted by this before pairing.
-   * Caller should query with ORDER BY created_at ASC, id ASC for stable results.
-   */
   createdAt?: Date | string | null;
+}
+
+function netSides<T extends LegLike>(legs: T[]): {
+  ins: Array<[string, number]>;
+  outs: Array<[string, number]>;
+} {
+  // Sum signed amounts per currency: in = positive, out = negative.
+  const net = new Map<string, number>();
+  for (const l of legs) {
+    if (!l.currency || !l.amount) continue;
+    if (l.direction !== "in" && l.direction !== "out") continue;
+    const amt = parseFloat(l.amount);
+    if (!Number.isFinite(amt) || amt <= 0) continue;
+    net.set(l.currency, (net.get(l.currency) ?? 0) + (l.direction === "in" ? amt : -amt));
+  }
+  const ins: Array<[string, number]> = [];
+  const outs: Array<[string, number]> = [];
+  for (const [cur, amount] of net) {
+    if (amount > 1e-9) ins.push([cur, amount]);
+    else if (amount < -1e-9) outs.push([cur, -amount]);
+  }
+  return { ins, outs };
+}
+
+function buildRatePriors<T extends LegLike>(
+  txRows: Array<{ id: string; transactionType: string | null }>,
+  legsByTx: Map<string, T[]>
+): Map<string, number> {
+  // Sample rates from unambiguous (1×1 after netting) Exchange txs. For each
+  // sample we record BOTH directions: an EUR→USDT trade at 1.17 USDT/EUR also
+  // seeds the inverse USDT→EUR prior at 0.855 EUR/USDT. This lets the splitter
+  // work for both buys (USDT→fiat) and sells (fiat→USDT) without requiring
+  // separate prior trades in each direction.
+  const samples = new Map<string, number[]>();
+  const push = (key: string, rate: number) => {
+    if (!samples.has(key)) samples.set(key, []);
+    samples.get(key)!.push(rate);
+  };
+  for (const tx of txRows) {
+    if ((tx.transactionType ?? "").trim() !== "Exchange") continue;
+    const { ins, outs } = netSides(legsByTx.get(tx.id) ?? []);
+    if (ins.length !== 1 || outs.length !== 1) continue;
+    if (ins[0][0] === outs[0][0]) continue;
+    const [inCur, inAmt] = ins[0];
+    const [outCur, outAmt] = outs[0];
+    if (inAmt <= 0 || outAmt <= 0) continue;
+    push(`${inCur}|${outCur}`, outAmt / inAmt);
+    push(`${outCur}|${inCur}`, inAmt / outAmt);
+  }
+  const priors = new Map<string, number>();
+  for (const [k, v] of samples) {
+    v.sort((a, b) => a - b);
+    priors.set(k, v[Math.floor(v.length / 2)]);
+  }
+  return priors;
 }
 
 export function legsToFifoRows<T extends LegLike>(
   txRows: Array<{ id: string; timestamp: Date | string; transactionType: string | null }>,
   legsByTx: Map<string, T[]>
 ): FifoTxRow[] {
+  const priors = buildRatePriors(txRows, legsByTx);
+
   return txRows.flatMap((tx) => {
     const txLegs = legsByTx.get(tx.id) ?? [];
-
     const ts = tx.timestamp instanceof Date ? tx.timestamp : new Date(tx.timestamp as string);
 
     const makeRow = (inCur: string, inAmt: number, outCur: string, outAmt: number): FifoTxRow => ({
@@ -368,110 +456,86 @@ export function legsToFifoRows<T extends LegLike>(
       outcomeCurrency: outCur,
     });
 
-    // ── Pass 1: greedy chronological pairing ────────────────────────────────
-    // Walk valid in/out legs in order; whenever we see a direction-flip,
-    // pair the new leg with the head of the opposite-direction queue.
-    // If every leg pairs cleanly (no leftovers), use those pairs as the
-    // canonical breakdown — it preserves per-leg rates faithfully.
-    const orderedLegs = [...txLegs]
-      .filter((l) => l.currency && l.amount && (l.direction === "in" || l.direction === "out"))
-      .sort((a, b) => {
-        const ta = a.createdAt ? new Date(a.createdAt as string | Date).getTime() : 0;
-        const tb = b.createdAt ? new Date(b.createdAt as string | Date).getTime() : 0;
-        return ta - tb;
-      });
-
-    if (orderedLegs.length === 0) return [];
-
-    const pendingIn: T[] = [];
-    const pendingOut: T[] = [];
-    const pairs: Array<{ outCur: string; outAmt: number; inCur: string; inAmt: number }> = [];
-
-    for (const leg of orderedLegs) {
-      const cur = leg.currency!;
-      const amt = parseFloat(leg.amount!);
-      if (!Number.isFinite(amt) || amt <= 0) continue;
-
-      if (leg.direction === "in") {
-        const partner = pendingOut.shift();
-        if (partner) {
-          pairs.push({
-            outCur: partner.currency!,
-            outAmt: parseFloat(partner.amount!),
-            inCur: cur,
-            inAmt: amt,
-          });
-        } else {
-          pendingIn.push(leg);
-        }
-      } else {
-        const partner = pendingIn.shift();
-        if (partner) {
-          pairs.push({
-            outCur: cur,
-            outAmt: amt,
-            inCur: partner.currency!,
-            inAmt: parseFloat(partner.amount!),
-          });
-        } else {
-          pendingOut.push(leg);
-        }
-      }
-    }
-
-    // Greedy succeeded if every leg got a partner. Reject the result when any
-    // pair has the same currency on both sides (e.g. internal USDT shuffle) —
-    // those produce spurious rows; fall back to legacy logic.
-    if (pendingIn.length === 0 && pendingOut.length === 0 && pairs.length > 0) {
-      const sameCurrencyPair = pairs.some((p) => p.inCur === p.outCur);
-      if (!sameCurrencyPair) {
-        // Merge pairs that share the same (inCur, outCur) — cleaner FIFO output
-        // when several legs were paired with the same currency combo.
-        const merged = new Map<string, { inCur: string; outCur: string; inAmt: number; outAmt: number }>();
-        for (const p of pairs) {
-          const key = `${p.inCur}|${p.outCur}`;
-          const existing = merged.get(key);
-          if (existing) {
-            existing.inAmt += p.inAmt;
-            existing.outAmt += p.outAmt;
-          } else {
-            merged.set(key, { inCur: p.inCur, outCur: p.outCur, inAmt: p.inAmt, outAmt: p.outAmt });
-          }
-        }
-        return [...merged.values()].map((p) => makeRow(p.inCur, p.inAmt, p.outCur, p.outAmt));
-      }
-    }
-
-    // ── Pass 2: legacy collapse + even-split fallback ──────────────────────
-    const inByCur = new Map<string, number>();
-    const outByCur = new Map<string, number>();
-    for (const l of txLegs) {
-      if (!l.currency || !l.amount) continue;
-      if (l.direction === "in") {
-        inByCur.set(l.currency, (inByCur.get(l.currency) ?? 0) + parseFloat(l.amount));
-      } else if (l.direction === "out") {
-        outByCur.set(l.currency, (outByCur.get(l.currency) ?? 0) + parseFloat(l.amount));
-      }
-    }
-
-    const ins = [...inByCur.entries()];
-    const outs = [...outByCur.entries()];
+    const { ins, outs } = netSides(txLegs);
     if (ins.length === 0 || outs.length === 0) return [];
 
+    // 1×1 after netting — trivial.
     if (ins.length === 1 && outs.length === 1) {
       return [makeRow(ins[0][0], ins[0][1], outs[0][0], outs[0][1])];
     }
 
+    // Many ins, single out — split outAmt across ins proportionally to
+    // USDT-equivalent value of each in (via priors). E.g. 1130ed04 with
+    // 23,839 USDT paid for 15,450 EUR + 122,000 CZK splits ~75/25 USDT
+    // (matches the on-chain leg amounts), not 50/50.
     if (outs.length === 1) {
-      const share = outs[0][1] / ins.length;
-      return ins.map(([cur, amt]) => makeRow(cur, amt, outs[0][0], share));
+      const [outCur, outAmt] = outs[0];
+      const weights = ins.map(([cur, amt]) => {
+        const prior = priors.get(`${cur}|${outCur}`);
+        return prior != null && prior > 0 ? amt * prior : null;
+      });
+      if (weights.every((w) => w != null)) {
+        const total = (weights as number[]).reduce((a, b) => a + b, 0);
+        if (total > 1e-9) {
+          return ins.map(([cur, amt], i) => makeRow(cur, amt, outCur, ((weights[i] as number) / total) * outAmt));
+        }
+      }
+      // Fallback: even split (legacy behaviour for orgs without priors).
+      const share = outAmt / ins.length;
+      return ins.map(([cur, amt]) => makeRow(cur, amt, outCur, share));
     }
 
+    // Single in, many outs — symmetric.
     if (ins.length === 1) {
-      const share = ins[0][1] / outs.length;
-      return outs.map(([cur, amt]) => makeRow(ins[0][0], share, cur, amt));
+      const [inCur, inAmt] = ins[0];
+      const weights = outs.map(([cur, amt]) => {
+        const prior = priors.get(`${inCur}|${cur}`);
+        return prior != null && prior > 0 ? amt / prior : null;
+      });
+      if (weights.every((w) => w != null)) {
+        const total = (weights as number[]).reduce((a, b) => a + b, 0);
+        if (total > 1e-9) {
+          return outs.map(([cur, amt], i) => makeRow(inCur, ((weights[i] as number) / total) * inAmt, cur, amt));
+        }
+      }
+      const share = inAmt / outs.length;
+      return outs.map(([cur, amt]) => makeRow(inCur, share, cur, amt));
     }
 
+    // 2×2 — try both pairings, pick min log-rate-deviation.
+    if (ins.length === 2 && outs.length === 2) {
+      const candidates = [
+        [[ins[0], outs[0]], [ins[1], outs[1]]] as const,
+        [[ins[0], outs[1]], [ins[1], outs[0]]] as const,
+      ];
+      let bestScore = Infinity;
+      let bestCand = candidates[0];
+      let anyHasPrior = false;
+      for (const cand of candidates) {
+        let score = 0;
+        let priorCount = 0;
+        for (const [[inCur, inAmt], [outCur, outAmt]] of cand) {
+          const prior = priors.get(`${inCur}|${outCur}`);
+          if (prior == null || prior <= 0) {
+            score += 100; // strong penalty for missing prior
+            continue;
+          }
+          priorCount++;
+          const implied = outAmt / inAmt;
+          const dev = Math.log(implied / prior);
+          score += dev * dev;
+        }
+        if (priorCount > 0) anyHasPrior = true;
+        if (score < bestScore) { bestScore = score; bestCand = cand; }
+      }
+      if (anyHasPrior) {
+        return bestCand.map(([[inCur, inAmt], [outCur, outAmt]]) =>
+          makeRow(inCur, inAmt, outCur, outAmt));
+      }
+    }
+
+    // Larger N×M — pair by index (legacy "both multi" branch). Still rare in
+    // production; if/when this fires we'll add a smarter heuristic.
     const rows: FifoTxRow[] = [];
     for (let i = 0; i < Math.max(ins.length, outs.length); i++) {
       const [inCur, inAmt] = ins[i % ins.length];

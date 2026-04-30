@@ -144,7 +144,44 @@ export default async function FifoPage() {
             <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
               <h2 className="text-sm font-medium text-slate-300">Summary by pair</h2>
             </div>
-            <div className="overflow-x-auto">
+            {/* Mobile cards */}
+            <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+              {result.summary.map((s, i) => {
+                const p = result.pairs[s.pair];
+                return (
+                  <div key={s.pair} className="px-4 py-3 flex flex-col gap-2"
+                    style={{ borderBottom: i < result.summary.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-mono text-slate-200">{s.pair}</span>
+                      <span className="text-sm font-mono font-semibold"
+                        style={{ color: s.totalRealizedGain >= 0 ? "var(--accent)" : "var(--red)" }}>
+                        {s.totalRealizedGain >= 0 ? "+" : ""}
+                        {s.totalRealizedGain.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                        <span className="text-[10px] text-slate-600 ml-1">{s.gainCurrency}</span>
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono">
+                      <span className="text-slate-600">Holding</span>
+                      <span className="text-slate-400 text-right">
+                        {s.currentHolding > 1e-9
+                          ? <>{s.currentHolding.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-slate-600">{p?.assetCurrency}</span></>
+                          : <span className="text-slate-700">—</span>}
+                      </span>
+                      <span className="text-slate-600">Avg buy</span>
+                      <span className="text-slate-400 text-right">
+                        {s.avgCost != null && p
+                          ? fmtRate(s.avgCost, p.baseCurrency, p.assetCurrency)
+                          : <span className="text-slate-700">—</span>}
+                      </span>
+                      <span className="text-slate-600">Trades</span>
+                      <span className="text-slate-500 text-right">{s.tradeCount}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm" style={{ minWidth: 640 }}>
               <thead>
                 <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
@@ -216,7 +253,36 @@ export default async function FifoPage() {
               <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
                 <h2 className="text-sm font-medium text-slate-300">Open lots</h2>
               </div>
-              <div className="overflow-x-auto">
+              {/* Mobile cards */}
+              <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+                {Object.values(result.pairs).flatMap((p) =>
+                  p.lots.filter((l) => l.remainingAmount > 1e-9).map((lot, i) => (
+                    <div key={`m-${p.pair}-${i}`} className="px-4 py-3 flex flex-col gap-1.5"
+                      style={{ borderBottom: "1px solid var(--inner-border)" }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-mono text-slate-300">{p.pair}</span>
+                        <span className="text-[11px] font-mono text-slate-500">{lot.acquiredAt.toISOString().slice(0, 10)}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono">
+                        <span className="text-slate-600">Remaining</span>
+                        <span className="text-slate-300 text-right">
+                          {lot.remainingAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                          <span className="text-slate-600">{p.assetCurrency}</span>
+                        </span>
+                        <span className="text-slate-600">Cost</span>
+                        <span className="text-slate-400 text-right">{fmtRate(lot.costRate, p.baseCurrency, p.assetCurrency)}</span>
+                        <span className="text-slate-600">Basis</span>
+                        <span className="text-slate-400 text-right">
+                          {(lot.remainingAmount * lot.costRate).toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                          <span className="text-slate-600">{p.baseCurrency}</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: 640 }}>
                 <thead>
                   <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>

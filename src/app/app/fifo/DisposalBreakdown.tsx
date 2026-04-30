@@ -219,21 +219,21 @@ export default function DisposalBreakdown({ disposals }: { disposals: DisposalEn
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
       {/* Header */}
-      <div className="px-4 py-3 flex items-center gap-4 flex-wrap"
+      <div className="px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 sm:flex-wrap"
         style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-medium text-slate-300">Disposal breakdown</h2>
           <p className="text-xs text-slate-600 mt-0.5">gain = (sell rate − buy rate) × fiat amount, in base currency</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-slate-600">From</span>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
             className="h-7 rounded px-2 text-xs outline-none"
-            style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)", color: "var(--text-2)" }} />
+            style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)", color: "var(--text-2)", colorScheme: "dark" }} />
           <span className="text-xs text-slate-600">To</span>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
             className="h-7 rounded px-2 text-xs outline-none"
-            style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)", color: "var(--text-2)" }} />
+            style={{ backgroundColor: "var(--raised)", border: "1px solid var(--border)", color: "var(--text-2)", colorScheme: "dark" }} />
           {(from || to) && (
             <button type="button" onClick={() => { setFrom(""); setTo(""); }}
               className="text-xs transition-opacity hover:opacity-60" style={{ color: "var(--text-3)" }}>
@@ -242,14 +242,69 @@ export default function DisposalBreakdown({ disposals }: { disposals: DisposalEn
           )}
         </div>
         {filtered.length > 0 && (
-          <div className="text-xs font-mono shrink-0" style={{ color: totalGain >= 0 ? "var(--accent)" : "var(--red)" }}>
+          <div className="text-xs font-mono" style={{ color: totalGain >= 0 ? "var(--accent)" : "var(--red)" }}>
             {totalGain >= 0 ? "+" : ""}{totalGain.toLocaleString(undefined, { maximumFractionDigits: 4 })} {gainCurrency}
             <span className="text-slate-600 ml-1">({filtered.length})</span>
           </div>
         )}
       </div>
 
-      <table className="w-full text-sm">
+      {/* Mobile card list — under sm breakpoint, the 8-column table is unusable. */}
+      <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+        {filtered.length === 0 ? (
+          <div className="px-4 py-8 text-center text-xs text-slate-600">
+            No disposals in selected range
+          </div>
+        ) : filtered.map((d, i) => {
+          const isOpen = expanded.has(i);
+          const gainColor = d.gain >= 0 ? "var(--accent)" : "var(--red)";
+          return (
+            <Fragment key={`m-${d.txId}-${i}`}>
+              <button
+                type="button"
+                onClick={() => toggle(i)}
+                className="w-full text-left px-4 py-3 flex flex-col gap-2"
+                style={{
+                  backgroundColor: isOpen ? "color-mix(in srgb, var(--raised-hi) 80%, transparent)" : "transparent",
+                  borderBottom: "1px solid var(--inner-border)",
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-slate-500 font-mono">{d.disposedAt.slice(0, 10)}</span>
+                    <span className="text-xs font-mono text-slate-300">{d.pair}</span>
+                  </div>
+                  <span className="text-sm font-mono font-semibold" style={{ color: gainColor }}>
+                    {d.gain >= 0 ? "+" : ""}{d.gain.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                    <span className="text-slate-600 text-[10px]">{d.baseCurrency}</span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-slate-400">
+                    {d.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                    <span className="text-slate-600">{d.assetCurrency}</span>
+                  </span>
+                  <span className="text-slate-500">
+                    {d.costRate === 0
+                      ? <span className="text-slate-700">— → </span>
+                      : <>{fmtRate(d.costRate, d.baseCurrency, d.assetCurrency)} → </>}
+                    {fmtRate(d.proceedsRate, d.baseCurrency, d.assetCurrency)}
+                  </span>
+                </div>
+              </button>
+              {isOpen && (
+                <div style={{ borderBottom: "1px solid var(--inner-border)" }}>
+                  <ExpandPanel d={d} open={isOpen} />
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+
+      {/* Desktop table — hidden under sm. */}
+      <div className="hidden sm:block overflow-x-auto">
+      <table className="w-full text-sm" style={{ minWidth: 760 }}>
         <thead>
           <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
             <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Date</th>
@@ -335,6 +390,7 @@ export default function DisposalBreakdown({ disposals }: { disposals: DisposalEn
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
