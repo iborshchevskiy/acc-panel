@@ -281,9 +281,13 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     .groupBy(transactionLegs.currency);
 
   // ── Activity heatmap: trades by day-of-week × hour-of-day ────────────────
+  // Aggregated in Europe/Prague time so the user sees their LOCAL business
+  // hours (a 14:00 trade in Prague is otherwise reported as 12:00 UTC and
+  // the pattern looks shifted). Respects the custom range filter.
+  const heatmapTz = "Europe/Prague";
   const heatmapRows = await db.execute(sql`
-    SELECT EXTRACT(DOW  FROM t.timestamp)::int AS dow,
-           EXTRACT(HOUR FROM t.timestamp)::int AS hr,
+    SELECT EXTRACT(DOW  FROM (t.timestamp AT TIME ZONE ${heatmapTz}))::int AS dow,
+           EXTRACT(HOUR FROM (t.timestamp AT TIME ZONE ${heatmapTz}))::int AS hr,
            COUNT(*)::int AS n
       FROM ${transactions} t
      WHERE t.organization_id = ${orgId}
@@ -297,12 +301,54 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
   // 7×24 grid: dow 0=Sun…6=Sat, hr 0…23. Reorder to Mon-first for display.
   const heatGrid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
   let heatMax = 0;
+  let heatTotal = 0;
   for (const r of heatmapRows) {
     const dowMonFirst = r.dow === 0 ? 6 : r.dow - 1;
     heatGrid[dowMonFirst][r.hr] = r.n;
+    heatTotal += r.n;
     if (r.n > heatMax) heatMax = r.n;
   }
   const heatHasData = heatMax > 0;
+
+  // ── Daily volume series (top 3 currencies) — independent of bucket. ──────
+  // Bucket selector controls the period table; the timeline always shows
+  // day-by-day so trends are visible at the finest grain. Default window:
+  // last 60 days, or the custom range when one is set.
+  const dailyWindowDays = 60;
+  const dailyFrom = isCustom && customFrom
+    ? new Date(customFrom)
+    : new Date(Date.now() - dailyWindowDays * 86400 * 1000);
+  const dailyTo = isCustom && customTo
+    ? new Date(customTo + "T23:59:59")
+    : new Date();
+  const dailyRows = await db.execute(sql`
+    SELECT TO_CHAR(DATE_TRUNC('day', t.timestamp AT TIME ZONE ${heatmapTz}), 'YYYY-MM-DD') AS d,
+           tl.currency,
+           SUM(tl.amount::numeric)::text AS volume
+      FROM ${transactions} t
+      JOIN ${transactionLegs} tl ON tl.transaction_id = t.id
+     WHERE t.organization_id = ${orgId}
+       AND t.deleted_at IS NULL
+       AND t.transaction_type = 'Exchange'
+       AND tl.direction IN ('in','out')
+       AND tl.currency IS NOT NULL
+       AND t.timestamp >= ${dailyFrom}
+       AND t.timestamp <= ${dailyTo}
+     GROUP BY 1, 2
+     ORDER BY 1
+  `) as unknown as Array<{ d: string; currency: string; volume: string }>;
+
+  // Build a continuous daily series for each top currency so missing days
+  // render as zero (otherwise the line skips, which misreads as "high").
+  const dailyDates: string[] = [];
+  for (let dt = new Date(dailyFrom); dt <= dailyTo; dt = new Date(dt.getTime() + 86400_000)) {
+    dailyDates.push(dt.toISOString().slice(0, 10));
+  }
+  const dailyByCurrency = new Map<string, Map<string, number>>();
+  for (const r of dailyRows) {
+    if (!dailyByCurrency.has(r.currency)) dailyByCurrency.set(r.currency, new Map());
+    dailyByCurrency.get(r.currency)!.set(r.d, parseFloat(r.volume) || 0);
+  }
 
   // ── Aggregate KPIs ───────────────────────────────────────────────────────
   // Volume-weighted average margin% across pairs that have both buy + sell.
@@ -317,6 +363,42 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     weightedMarginDen += vol;
   }
   const avgMargin = weightedMarginDen > 0 ? weightedMarginNum / weightedMarginDen : null;
+
+  // ── USDT-equivalent total volume ─────────────────────────────────────────
+  // Build a per-currency rate table from the spread analysis (which already
+  // gives us VWAP fiat-per-USDT for each pair). Apply to every currency's
+  // total volume. Currencies without a known rate (e.g. exotic crypto we've
+  // never traded against USDT) are reported separately so the user knows
+  // they're excluded from the headline number.
+  const rateToUsdt = new Map<string, number>(); // 1 unit of CUR → X USDT
+  rateToUsdt.set("USDT", 1);
+  for (const s of spreadMap.values()) {
+    // pair shape from SQL is "<non-fiat>/<fiat>" — e.g. "USDT/EUR".
+    // baseCurrency = pair.split("/")[0] = non-fiat side (USDT).
+    // quoteCurrency = pair.split("/")[1] = fiat side (EUR).
+    // avgBuy / avgSell are VWAP fiat-per-non-fiat (e.g. 0.86 EUR per 1 USDT).
+    // To express 1 fiat in USDT we invert.
+    const nonFiat = s.baseCurrency;
+    const fiat = s.quoteCurrency;
+    if (nonFiat !== "USDT") continue; // only direct USDT pairs for now
+    const rate = (s.avgBuy != null && s.avgSell != null)
+      ? (s.avgBuy + s.avgSell) / 2
+      : (s.avgBuy ?? s.avgSell);
+    if (rate == null || rate <= 0) continue;
+    rateToUsdt.set(fiat, 1 / rate);
+  }
+  let totalVolumeUsdt = 0;
+  let unknownRateVolume = 0;
+  const unknownRateCurrencies = new Set<string>();
+  for (const [cur, vol] of totalVolume) {
+    const r = rateToUsdt.get(cur);
+    if (r != null) {
+      totalVolumeUsdt += vol * r;
+    } else {
+      unknownRateVolume += vol;
+      unknownRateCurrencies.add(cur);
+    }
+  }
 
   // MoM change: compare last full bucket vs previous bucket on tradeCount.
   const last = periods[periods.length - 1];
@@ -413,11 +495,15 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
           accent="var(--indigo)"
         />
         <KpiCard
-          label="Top Volume"
-          value={topCurrencies[0]
-            ? (totalVolume.get(topCurrencies[0]) ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })
+          label="Total Volume"
+          value={totalVolumeUsdt > 0
+            ? totalVolumeUsdt.toLocaleString(undefined, { maximumFractionDigits: 0 })
             : "—"}
-          sub={topCurrencies[0] ?? "no data"}
+          sub={totalVolumeUsdt > 0
+            ? `USDT-eq${unknownRateCurrencies.size > 0
+                ? ` · excl. ${[...unknownRateCurrencies].slice(0, 2).join(", ")}${unknownRateCurrencies.size > 2 ? "…" : ""}`
+                : ""}`
+            : "need a USDT pair"}
           accent="var(--accent)"
         />
         <KpiCard
@@ -437,14 +523,47 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
         />
       </section>
 
-      {/* ── VOLUME TIMELINE ─────────────────────────────────────────────── */}
-      {periods.length > 0 && timelineCurrencies.length > 0 && (
+      {/* Per-currency volume rollup (so the headline isn't the only signal) */}
+      {totalVolume.size > 0 && (
+        <div className="rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-2"
+          style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+          <span className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
+            Volume per currency
+          </span>
+          {[...totalVolume.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([cur, vol]) => {
+              const usdtEq = (rateToUsdt.get(cur) ?? 0) * vol;
+              return (
+                <span key={cur} className="flex items-baseline gap-1.5 text-xs">
+                  <span className="font-medium" style={{ color: "var(--text-2)" }}>{cur}</span>
+                  <span className="font-mono" style={{ color: "var(--text-3)" }}>
+                    {vol.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </span>
+                  {usdtEq > 0 && cur !== "USDT" && (
+                    <span className="font-mono text-[10px]" style={{ color: "var(--text-4)" }}>
+                      ≈ {usdtEq.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT
+                    </span>
+                  )}
+                </span>
+              );
+            })}
+        </div>
+      )}
+
+      {/* ── VOLUME TIMELINE — always daily, last N days ───────────────────
+           The bucket selector (day/week/month) only controls the period
+           breakdown table below; the timeline stays at daily resolution so
+           day-to-day movement stays visible. Empty days render as zero so
+           the line traces real activity, not interpolated gaps. ─────────── */}
+      {dailyDates.length > 0 && timelineCurrencies.length > 0 && (
         <section className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
-          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between px-4 py-3 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
             <div>
               <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Volume Timeline</h2>
               <p className="text-[10px]" style={{ color: "var(--text-4)" }}>
-                top {timelineCurrencies.length} currencies · {periods.length} {bucket}{periods.length === 1 ? "" : "s"}
+                daily, top {timelineCurrencies.length} currencies · {dailyDates.length} day{dailyDates.length === 1 ? "" : "s"}
+                {!isCustom && <> · {dailyDates[0]} → {dailyDates[dailyDates.length - 1]}</>}
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
@@ -458,9 +577,11 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-3">
             {timelineCurrencies.map((c, idx) => {
-              const series = periods.map((p) => p.volume[c] ?? 0);
+              const dayMap = dailyByCurrency.get(c) ?? new Map<string, number>();
+              const series = dailyDates.map((d) => dayMap.get(d) ?? 0);
               const max = Math.max(...series);
               const total = series.reduce((s, v) => s + v, 0);
+              const usdtEq = (rateToUsdt.get(c) ?? 0) * total;
               const paths = sparklinePaths(series, 600, 80);
               const color = seriesPalette[idx];
               return (
@@ -474,10 +595,17 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
                       peak {max.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </span>
                   </div>
-                  <p className="font-[family-name:var(--font-ibm-plex-mono)] text-xl font-medium leading-none" style={{ color }}>
-                    {total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </p>
-                  {paths && (
+                  <div className="flex items-baseline gap-2">
+                    <p className="font-[family-name:var(--font-ibm-plex-mono)] text-xl font-medium leading-none" style={{ color }}>
+                      {total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </p>
+                    {usdtEq > 0 && c !== "USDT" && (
+                      <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>
+                        ≈ {usdtEq.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT
+                      </span>
+                    )}
+                  </div>
+                  {paths ? (
                     <svg viewBox="0 0 600 80" className="w-full mt-1" preserveAspectRatio="none" style={{ height: 56 }}>
                       <defs>
                         <linearGradient id={`grad-${c}`} x1="0" y1="0" x2="0" y2="1">
@@ -488,10 +616,14 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
                       <path d={paths.area} fill={`url(#grad-${c})`} />
                       <path d={paths.line} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
                     </svg>
+                  ) : (
+                    <div className="text-[10px] font-mono py-4 text-center" style={{ color: "var(--text-4)" }}>
+                      no activity in window
+                    </div>
                   )}
                   <div className="flex items-center justify-between text-[9px] font-mono" style={{ color: "var(--text-4)" }}>
-                    <span>{periods[0]?.label}</span>
-                    <span>{periods[periods.length - 1]?.label}</span>
+                    <span>{dailyDates[0]}</span>
+                    <span>{dailyDates[dailyDates.length - 1]}</span>
                   </div>
                 </div>
               );
@@ -679,11 +811,15 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       {/* ── ACTIVITY HEATMAP ────────────────────────────────────────────── */}
       {heatHasData && (
         <section className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
-          <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
-            <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Activity Heatmap</h2>
-            <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>
-              trades by day-of-week × hour · UTC · max {heatMax}
-            </span>
+          <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Activity Heatmap</h2>
+              <p className="text-[10px]" style={{ color: "var(--text-4)" }}>
+                {heatTotal.toLocaleString()} exchange{heatTotal === 1 ? "" : "s"} grouped by local hour
+                {!isCustom && " · all-time"} · {heatmapTz.replace("_", " ")}
+              </p>
+            </div>
+            <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>peak {heatMax}/hour</span>
           </div>
           <div className="px-4 py-4 overflow-x-auto">
             <div className="inline-block min-w-full">
