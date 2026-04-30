@@ -92,8 +92,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       AND t.transaction_type IN ('Exchange', 'Revenue')
       AND tl.direction IN ('in', 'out')
       AND tl.currency IS NOT NULL
-      ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
-      ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
+      ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom).toISOString()}` : sql``}
+      ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59").toISOString()}` : sql``}
     GROUP BY 1, 2, 3, 4
     ORDER BY 1
   `) as unknown as PeriodAgg[];
@@ -109,8 +109,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
      WHERE t.organization_id = ${orgId}
        AND t.deleted_at IS NULL
        AND t.transaction_type = 'Exchange'
-       ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
-       ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
+       ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom).toISOString()}` : sql``}
+       ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59").toISOString()}` : sql``}
      GROUP BY 1
   `) as unknown as Array<{ period: string; trade_count: number }>;
   const tradeCountByPeriod = new Map(periodCountAggs.map((r) => [r.period, r.trade_count]));
@@ -194,8 +194,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
            AND t.transaction_type = 'Exchange'
            AND tl.direction IN ('in','out')
            AND tl.currency IS NOT NULL
-           ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
-           ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
+           ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom).toISOString()}` : sql``}
+           ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59").toISOString()}` : sql``}
          GROUP BY t.id, tl.direction, tl.currency
       ),
       single_pair AS (
@@ -293,8 +293,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
      WHERE t.organization_id = ${orgId}
        AND t.deleted_at IS NULL
        AND t.transaction_type = 'Exchange'
-       ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
-       ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
+       ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom).toISOString()}` : sql``}
+       ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59").toISOString()}` : sql``}
      GROUP BY 1, 2
   `) as unknown as Array<{ dow: number; hr: number; n: number }>;
 
@@ -332,8 +332,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
        AND t.transaction_type = 'Exchange'
        AND tl.direction IN ('in','out')
        AND tl.currency IS NOT NULL
-       AND t.timestamp >= ${dailyFrom}
-       AND t.timestamp <= ${dailyTo}
+       AND t.timestamp >= ${dailyFrom.toISOString()}
+       AND t.timestamp <= ${dailyTo.toISOString()}
      GROUP BY 1, 2
      ORDER BY 1
   `) as unknown as Array<{ d: string; currency: string; volume: string }>;
