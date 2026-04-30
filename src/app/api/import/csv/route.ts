@@ -6,6 +6,7 @@ import { organizationMembers } from "@/db/schema/system";
 import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import { ensureCurrencies } from "@/lib/currencies";
 import { isRateLimited } from "@/lib/rate-limit";
+import { parseAmountToString } from "@/lib/parse-amount";
 
 interface CsvRow {
   Date: string;
@@ -103,7 +104,8 @@ export async function POST(req: NextRequest) {
 
   // ── Batch dedup — 2 queries total regardless of file size ──────────────────
 
-  // 1. TxID rows: one IN query for all hashes
+  // 1. TxID rows: one IN query for all hashes. Filter `deleted_at IS NULL`
+  // so soft-deleted rows don't block re-import (audit memory rule).
   const rowsWithHash = validRows.filter((r) => r.TxID);
   const existingHashes = new Set<string>();
   if (rowsWithHash.length > 0) {
@@ -113,6 +115,7 @@ export async function POST(req: NextRequest) {
       .where(and(
         eq(transactions.organizationId, orgId),
         inArray(transactions.txHash, rowsWithHash.map((r) => r.TxID)),
+        isNull(transactions.deletedAt),
       ));
     found.forEach((r) => r.txHash && existingHashes.add(r.txHash));
   }
@@ -147,31 +150,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ inserted: 0, skipped, errors });
   }
 
-  // ── Batch insert transactions ───────────────────────────────────────────────
-  let insertedTxs: Array<{ id: string }>;
+  // ── Build leg payloads up front so we can validate amounts and reject
+  // unparseable rows before touching the DB. parseAmountToString handles
+  // every common decimal format (US, EU, FR, CH) so a German user pasting
+  // "1.234,56" doesn't blow the import.
+  type LegBuild = { direction: "in" | "out" | "fee"; amount: string; currency: string };
+  const legsByRow: LegBuild[][] = [];
+  const validatedRows: CsvRow[] = [];
+  for (const row of newRows) {
+    const legs: LegBuild[] = [];
+    let rowOk = true;
+    const tryAdd = (raw: string, currency: string, direction: "in" | "out" | "fee") => {
+      if (!raw || !currency) return;
+      const amt = parseAmountToString(raw);
+      if (amt == null) { rowOk = false; return; }
+      legs.push({ direction, amount: amt, currency });
+    };
+    tryAdd(row["Income Amount"], row["Income Currency"], "in");
+    tryAdd(row["Outcome Amount"], row["Outcome Currency"], "out");
+    tryAdd(row["Fee"], row["Fee Currency"], "fee");
+    if (!rowOk) { errors++; continue; }
+    validatedRows.push(row);
+    legsByRow.push(legs);
+  }
+
+  if (validatedRows.length === 0) {
+    return NextResponse.json({ inserted: 0, skipped, errors });
+  }
+
+  // ── Insert in a transaction so a leg-insert failure rolls the tx-insert
+  // back. Without this, a partial failure left orphan txs (audit Bug B9).
+  let inserted = 0;
   try {
-    insertedTxs = await db.insert(transactions).values(
-      newRows.map((row) => ({
-        organizationId: orgId,
-        txHash: row.TxID || null,
-        chain: inferChain(row.TxID || null),
-        type: row.Type || "Trade",
-        transactionType: row["Transaction Type"] || null,
-        timestamp: new Date(row.Date),
-        fromAddress: row.From ? extractAddress(row.From) : null,
-        toAddress: row.To ? extractAddress(row.To) : null,
-        location: row.Location || null,
-        comment: row.Comment || null,
-        isMatched: false,
-        raw: row as unknown as Record<string, string>,
-      }))
-    ).returning({ id: transactions.id });
-  } catch {
-    // Entire batch failed — fall back to per-row inserts to salvage what we can
-    let inserted = 0;
-    for (const row of newRows) {
-      try {
-        const [tx] = await db.insert(transactions).values({
+    await db.transaction(async (tx) => {
+      const insertedTxs = await tx.insert(transactions).values(
+        validatedRows.map((row) => ({
           organizationId: orgId,
           txHash: row.TxID || null,
           chain: inferChain(row.TxID || null),
@@ -184,50 +197,28 @@ export async function POST(req: NextRequest) {
           comment: row.Comment || null,
           isMatched: false,
           raw: row as unknown as Record<string, string>,
-        }).returning({ id: transactions.id });
-        insertedTxs = [{ id: tx.id }];
+        }))
+      ).returning({ id: transactions.id });
 
-        const legValues = [];
-        if (row["Income Amount"] && row["Income Currency"])
-          legValues.push({ transactionId: tx.id, direction: "in" as const, amount: row["Income Amount"], currency: row["Income Currency"] });
-        if (row["Outcome Amount"] && row["Outcome Currency"])
-          legValues.push({ transactionId: tx.id, direction: "out" as const, amount: row["Outcome Amount"], currency: row["Outcome Currency"] });
-        if (row["Fee"] && row["Fee Currency"])
-          legValues.push({ transactionId: tx.id, direction: "fee" as const, amount: row["Fee"], currency: row["Fee Currency"] });
-        if (legValues.length > 0) await db.insert(transactionLegs).values(legValues);
-        inserted++;
-      } catch { errors++; }
-    }
-    await ensureCurrencies(orgId, newRows.flatMap((r) => [r["Income Currency"], r["Outcome Currency"], r["Fee Currency"]].filter(Boolean)));
-    return NextResponse.json({ inserted, skipped, errors });
+      const allLegs: Array<LegBuild & { transactionId: string }> = [];
+      for (let i = 0; i < validatedRows.length; i++) {
+        for (const leg of legsByRow[i]) {
+          allLegs.push({ transactionId: insertedTxs[i].id, ...leg });
+        }
+      }
+      if (allLegs.length > 0) await tx.insert(transactionLegs).values(allLegs);
+      inserted = insertedTxs.length;
+    });
+
+    const allCurrencies = legsByRow.flat().map((l) => l.currency);
+    if (allCurrencies.length > 0) await ensureCurrencies(orgId, allCurrencies);
+  } catch (e) {
+    return NextResponse.json({
+      error: "Insert failed",
+      message: e instanceof Error ? e.message : String(e),
+      inserted: 0, skipped, errors: errors + validatedRows.length,
+    }, { status: 500 });
   }
 
-  // ── Batch insert all legs in one statement ─────────────────────────────────
-  const legValues: Array<{ transactionId: string; direction: "in" | "out" | "fee"; amount: string; currency: string }> = [];
-  const allCurrencies: string[] = [];
-
-  for (let i = 0; i < newRows.length; i++) {
-    const row = newRows[i];
-    const txId = insertedTxs[i].id;
-    if (row["Income Amount"] && row["Income Currency"]) {
-      legValues.push({ transactionId: txId, direction: "in", amount: row["Income Amount"], currency: row["Income Currency"] });
-      allCurrencies.push(row["Income Currency"]);
-    }
-    if (row["Outcome Amount"] && row["Outcome Currency"]) {
-      legValues.push({ transactionId: txId, direction: "out", amount: row["Outcome Amount"], currency: row["Outcome Currency"] });
-      allCurrencies.push(row["Outcome Currency"]);
-    }
-    if (row["Fee"] && row["Fee Currency"]) {
-      legValues.push({ transactionId: txId, direction: "fee", amount: row["Fee"], currency: row["Fee Currency"] });
-      allCurrencies.push(row["Fee Currency"]);
-    }
-  }
-
-  // Both are independent — run in parallel
-  await Promise.all([
-    legValues.length > 0 ? db.insert(transactionLegs).values(legValues) : Promise.resolve(),
-    ensureCurrencies(orgId, allCurrencies),
-  ]);
-
-  return NextResponse.json({ inserted: insertedTxs.length, skipped, errors });
+  return NextResponse.json({ inserted, skipped, errors });
 }

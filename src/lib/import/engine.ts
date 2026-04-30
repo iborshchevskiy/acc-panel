@@ -5,14 +5,53 @@
 import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { wallets, importTargets } from "@/db/schema/wallets";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { ensureCurrencies } from "@/lib/currencies";
 import { fetchTrc20Transactions, fetchTrxTransfers } from "./tron";
 import { fetchEvmNormalTxs, fetchErc20Transfers } from "./evm";
 import { fetchSolTransactions } from "./sol";
 import { convertTronTx, convertEvmTx, convertSolTx } from "./converter";
 
-type ConvertedTx = ReturnType<typeof convertTronTx>;
+type ConvertedTx = NonNullable<ReturnType<typeof convertTronTx>>;
+
+/**
+ * Merge converted txs that share a `txHash` into a single tx with the union
+ * of legs. A single chain tx can emit multiple transfer events (DEX swaps,
+ * batched payouts, TRC-20 transfer + TRX fee in one signature). The previous
+ * importer dedup-by-hash kept only the first row and silently dropped the
+ * rest — wrong cost basis for any non-trivial chain activity (audit Bug B3).
+ *
+ * Manual rows (no txHash) pass through unmerged.
+ */
+export function mergeByHash(rows: ConvertedTx[]): ConvertedTx[] {
+  const byHash = new Map<string, ConvertedTx>();
+  const noHash: ConvertedTx[] = [];
+  for (const c of rows) {
+    if (!c.tx.txHash) { noHash.push(c); continue; }
+    const ex = byHash.get(c.tx.txHash);
+    if (ex) {
+      ex.legs.push(...c.legs);
+      ex.tx.raw = { ...ex.tx.raw, [`merge_${ex.legs.length}`]: c.tx.raw };
+    } else {
+      byHash.set(c.tx.txHash, c);
+    }
+  }
+  // Dedupe identical fee legs introduced by the merge. EVM's txlist and
+  // tokentx endpoints return the same hash with the same gasUsed × gasPrice;
+  // each call to convertEvmTx emits a fee leg so naive merge double-counts.
+  // Keys: direction|currency|amount — only exact duplicates are dropped.
+  for (const c of byHash.values()) {
+    const seen = new Set<string>();
+    c.legs = c.legs.filter((l) => {
+      if (l.direction !== "fee") return true;
+      const key = `${l.direction}|${l.currency}|${l.amount}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  return [...byHash.values(), ...noHash];
+}
 
 async function getInternalAddresses(orgId: string): Promise<Set<string>> {
   const rows = await db
@@ -60,14 +99,14 @@ export async function runImport(walletId: string, orgId: string): Promise<{ inse
   let skipped = 0;
 
   try {
-    let convertedTxs: Array<ConvertedTx> = [];
+    let rawConverted: Array<ConvertedTx | null> = [];
 
     if (wallet.chain === "TRON") {
       const [trc20, trx] = await Promise.all([
         fetchTrc20Transactions(wallet.address),
         fetchTrxTransfers(wallet.address),
       ]);
-      convertedTxs = [...trc20, ...trx].map((raw) =>
+      rawConverted = [...trc20, ...trx].map((raw) =>
         convertTronTx(raw, wallet.address, internalAddresses)
       );
     } else if (wallet.chain === "ETH" || wallet.chain === "BNB") {
@@ -76,48 +115,75 @@ export async function runImport(walletId: string, orgId: string): Promise<{ inse
         fetchEvmNormalTxs(wallet.address, chain),
         fetchErc20Transfers(wallet.address, chain),
       ]);
-      convertedTxs = [...normal, ...erc20].map((raw) =>
+      rawConverted = [...normal, ...erc20].map((raw) =>
         convertEvmTx(raw, wallet.address, chain, internalAddresses)
       );
     } else if (wallet.chain === "SOL") {
       const { sol, spl } = await fetchSolTransactions(wallet.address);
-      convertedTxs = [
+      rawConverted = [
         ...sol.map((raw) => convertSolTx(raw, wallet.address, false, internalAddresses)),
         ...spl.map((raw) => convertSolTx(raw, wallet.address, true, internalAddresses)),
       ];
     }
 
-    // Filter to new transactions only (dedup against existing hashes)
-    const newTxs = convertedTxs.filter((c) => {
-      if (!c) { skipped++; return false; }
-      if (c.tx.txHash && existingHashes.has(c.tx.txHash)) { skipped++; return false; }
-      return true;
-    }) as NonNullable<ConvertedTx>[];
+    // Drop nulls then merge multiple transfer events of the same tx hash into
+    // a single tx with the union of legs (audit Bug B3).
+    const merged = mergeByHash(rawConverted.filter((c): c is ConvertedTx => c !== null));
 
+    // Dedup against already-present (live) txs.
+    const newTxs: ConvertedTx[] = [];
+    for (const c of merged) {
+      if (c.tx.txHash && existingHashes.has(c.tx.txHash)) { skipped++; continue; }
+      newTxs.push(c);
+    }
     inserted = newTxs.length;
 
     if (newTxs.length > 0) {
-      // Batch insert all transactions in one query
-      const insertedTxs = await db
-        .insert(transactions)
-        .values(newTxs.map((c) => ({ ...c.tx, organizationId: orgId, isMatched: false })))
-        .returning({ id: transactions.id });
+      // Wrap tx + legs in a single transaction so a leg-insert failure rolls
+      // the tx-insert back (audit Bug B9 — without this, concurrent imports
+      // produced orphan txs with no legs that FIFO silently treated as valid).
+      //
+      // Race safety (audit Bug B2): two wallets owned by the same org could
+      // race their imports of the same chain tx. Snapshot-then-insert leaves
+      // a window where both see "no existing hash" and both insert. We avoid
+      // it with a per-org advisory lock that serialises overlapping imports
+      // for the same organisation. Cost: minimal — locks are released at
+      // commit, no contention with cross-org imports.
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
 
-      // Batch insert all legs in one query
-      const allLegs = newTxs.flatMap((c, i) =>
-        c.legs.map((leg) => ({
-          transactionId: insertedTxs[i].id,
-          direction: leg.direction,
-          amount: leg.amount,
-          currency: leg.currency,
-          walletId,
-        }))
-      );
-      if (allLegs.length > 0) {
-        await db.insert(transactionLegs).values(allLegs);
-      }
+        // Re-fetch hashes inside the lock so the dedup is race-free.
+        const liveHashRows = await tx
+          .select({ txHash: transactions.txHash })
+          .from(transactions)
+          .where(and(eq(transactions.organizationId, orgId), isNull(transactions.deletedAt)));
+        const liveHashes = new Set(liveHashRows.map((r) => r.txHash).filter(Boolean) as string[]);
 
-      // Ensure all currencies exist (one upsert for the whole batch)
+        const trulyNew = newTxs.filter((c) => !c.tx.txHash || !liveHashes.has(c.tx.txHash));
+        const racedSkips = newTxs.length - trulyNew.length;
+        if (racedSkips > 0) skipped += racedSkips;
+        if (trulyNew.length === 0) { inserted = 0; return; }
+
+        const insertedTxs = await tx
+          .insert(transactions)
+          .values(trulyNew.map((c) => ({ ...c.tx, organizationId: orgId, isMatched: false })))
+          .returning({ id: transactions.id });
+
+        const allLegs = trulyNew.flatMap((c, i) =>
+          c.legs.map((leg) => ({
+            transactionId: insertedTxs[i].id,
+            direction: leg.direction,
+            amount: leg.amount,
+            currency: leg.currency,
+            walletId,
+          }))
+        );
+        if (allLegs.length > 0) {
+          await tx.insert(transactionLegs).values(allLegs);
+        }
+        inserted = trulyNew.length;
+      });
+
       const allCurrencies = newTxs.flatMap((c) => c.legs.map((l) => l.currency)).filter(Boolean);
       if (allCurrencies.length > 0) await ensureCurrencies(orgId, allCurrencies);
     }

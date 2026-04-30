@@ -7,6 +7,20 @@ import { eq, desc, isNull, and } from "drizzle-orm";
 
 const FIELDNAMES = ["Date","Type","Transaction Type","Income Amount","Income Currency","Outcome Amount","Outcome Currency","Fee","Fee Currency","TxID","From","To","Comment","Location"];
 
+// Map chain → explorer URL prefix. The previous version hardcoded Tronscan
+// for everything; ETH/SOL addresses got wrapped in nonsense URLs that
+// 404'd on click and only round-tripped because the CSV importer's regex
+// stripped them out (audit Bug B6).
+function explorerBase(chain: string | null): string {
+  switch (chain) {
+    case "TRON": return "https://tronscan.org/#/address/";
+    case "ETH":  return "https://etherscan.io/address/";
+    case "BNB":  return "https://bscscan.com/address/";
+    case "SOL":  return "https://solscan.io/account/";
+    default:     return "";
+  }
+}
+
 export async function GET(req: NextRequest) {
   const format = req.nextUrl.searchParams.get("format") ?? "csv";
 
@@ -49,8 +63,8 @@ export async function GET(req: NextRequest) {
       "Fee": feeLeg ? feeLeg.transaction_legs.amount : "",
       "Fee Currency": feeLeg ? feeLeg.transaction_legs.currency : "",
       "TxID": tx.txHash ?? "",
-      "From": tx.fromAddress ? `https://tronscan.org/#/address/${tx.fromAddress}` : "",
-      "To": tx.toAddress ? `https://tronscan.org/#/address/${tx.toAddress}` : "",
+      "From": tx.fromAddress ? `${explorerBase(tx.chain)}${tx.fromAddress}` : "",
+      "To": tx.toAddress ? `${explorerBase(tx.chain)}${tx.toAddress}` : "",
       "Comment": tx.comment ?? "",
       "Location": tx.location ?? "",
     };

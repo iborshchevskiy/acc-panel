@@ -4,6 +4,7 @@
 import type { TronTx } from "./tron";
 import type { EvmTx } from "./evm";
 import type { SolTransfer } from "./sol";
+import { rawToDecimalString } from "./amount";
 
 export interface TxInsert {
   txHash: string;
@@ -47,7 +48,7 @@ export function convertTronTx(
   if (!fromMe && !toMe) return null;
 
   const decimals = raw.token_info?.decimals ?? 6;
-  const amount = (parseInt(raw.value, 10) / Math.pow(10, decimals)).toString();
+  const amount = rawToDecimalString(raw.value, decimals);
   const symbol = raw.token_info?.symbol ?? "TRX";
   const timestamp = new Date(raw.block_timestamp);
 
@@ -68,8 +69,7 @@ export function convertTronTx(
   }
 
   if (raw.fee_sun && raw.fee_sun > 0) {
-    const feeTrx = (raw.fee_sun / 1_000_000).toString();
-    legs.push({ direction: "fee", amount: feeTrx, currency: "TRX" });
+    legs.push({ direction: "fee", amount: rawToDecimalString(raw.fee_sun, 6), currency: "TRX" });
   }
 
   return {
@@ -104,8 +104,9 @@ export function convertEvmTx(
   if (!fromMe && !toMe) return null;
 
   const decimals = raw.tokenDecimal ? parseInt(raw.tokenDecimal, 10) : 18;
-  const amount = (parseInt(raw.value, 10) / Math.pow(10, decimals)).toString();
+  const amount = rawToDecimalString(raw.value, decimals);
   const symbol = raw.tokenSymbol ?? (chain === "ETH" ? "ETH" : "BNB");
+  const gasCurrency = chain === "ETH" ? "ETH" : "BNB";
 
   const bothInternal =
     isInternal(raw.from, internalAddresses) && isInternal(raw.to ?? "", internalAddresses);
@@ -116,6 +117,18 @@ export function convertEvmTx(
     legs.push({ direction: "in", amount, currency: symbol });
   } else if (fromMe && !toMe) {
     legs.push({ direction: "out", amount, currency: symbol });
+  }
+
+  // Gas fee — only the sender pays, never the recipient. Skip token-transfer
+  // rows where we're the recipient; their gas was paid by the sender's address.
+  if (fromMe && raw.gasUsed && raw.gasPrice) {
+    try {
+      const feeWei = (BigInt(raw.gasUsed) * BigInt(raw.gasPrice)).toString();
+      const fee = rawToDecimalString(feeWei, 18);
+      if (fee !== "0") legs.push({ direction: "fee", amount: fee, currency: gasCurrency });
+    } catch {
+      // gasUsed or gasPrice malformed — silently skip the fee leg.
+    }
   }
 
   return {
@@ -158,7 +171,9 @@ export function convertSolTx(
 
   const decimals = isSpl ? (raw.decimals ?? 9) : 9;
   const rawAmount = isSpl ? (raw.changeAmount ?? 0) : raw.lamport;
-  const amount = (rawAmount / Math.pow(10, decimals)).toString();
+  // SPL "decimals" is 0 here because Helius already returns human-readable
+  // tokenAmount; native SOL needs full lamport→SOL conversion.
+  const amount = decimals === 0 ? rawAmount.toString() : rawToDecimalString(rawAmount, decimals);
   const symbol = isSpl ? (raw.symbol ?? "SPL") : "SOL";
 
   const bothInternal =
@@ -166,6 +181,11 @@ export function convertSolTx(
     isInternal(raw.src, internalAddresses) &&
     isInternal(raw.dst, internalAddresses);
   const txType = bothInternal ? "Transfer" : "Trade";
+
+  const legs: LegInsert[] = [{ direction, amount, currency: symbol }];
+  if (raw.feeLamports && raw.feeLamports > 0) {
+    legs.push({ direction: "fee", amount: rawToDecimalString(raw.feeLamports, 9), currency: "SOL" });
+  }
 
   return {
     tx: {
@@ -180,6 +200,6 @@ export function convertSolTx(
       comment: null,
       raw: raw as unknown as Record<string, unknown>,
     },
-    legs: [{ direction, amount, currency: symbol }],
+    legs,
   };
 }

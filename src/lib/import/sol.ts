@@ -28,11 +28,16 @@ export interface SolTransfer {
   tokenAddress?: string;
   symbol?: string;
   decimals?: number;
+  /** Per-tx Helius fee (lamports) — only set on the canonical row to avoid
+   * double-counting when one tx has both SOL and SPL transfers. */
+  feeLamports?: number;
 }
 
 interface HeliusTx {
   signature: string;
   timestamp: number;
+  fee?: number;     // lamports — paid by the tx fee payer
+  feePayer?: string;
   nativeTransfers: Array<{
     fromUserAccount: string;
     toUserAccount: string;
@@ -85,19 +90,33 @@ export async function fetchSolTransactions(
       if (seen.has(tx.signature)) continue;
       seen.add(tx.signature);
 
+      // Attach the per-tx Helius fee to the FIRST emitted transfer for this
+      // signature so the converter can emit a single fee leg (avoids
+      // double-counting when one signature produces both SOL + SPL rows).
+      // Only attach if we paid the fee.
+      const feePayerLow = tx.feePayer?.toLowerCase();
+      const weArePayer = feePayerLow === addr;
+      const feeForThisTx = weArePayer && tx.fee && tx.fee > 0 ? tx.fee : undefined;
+      let feeAttached = false;
+
       // Native SOL transfers
       for (const t of tx.nativeTransfers ?? []) {
         if (t.amount <= 0) continue;
         const fromLow = t.fromUserAccount.toLowerCase();
         const toLow   = t.toUserAccount.toLowerCase();
         if (fromLow !== addr && toLow !== addr) continue;
-        sol.push({
+        const row: SolTransfer = {
           txHash:    tx.signature,
           blockTime: tx.timestamp,
           src:       t.fromUserAccount,
           dst:       t.toUserAccount,
           lamport:   t.amount,
-        });
+        };
+        if (feeForThisTx && !feeAttached) {
+          row.feeLamports = feeForThisTx;
+          feeAttached = true;
+        }
+        sol.push(row);
       }
 
       // SPL token transfers
@@ -110,7 +129,7 @@ export async function fetchSolTransactions(
         const symbol = KNOWN_MINTS[t.mint] ?? t.mint.slice(0, 6);
         const isIncoming = toLow === addr;
 
-        spl.push({
+        const row: SolTransfer = {
           txHash:       tx.signature,
           blockTime:    tx.timestamp,
           src:          t.fromUserAccount,
@@ -121,7 +140,12 @@ export async function fetchSolTransactions(
           tokenAddress: t.mint,
           symbol,
           decimals:     0, // Helius already returns human-readable amounts
-        });
+        };
+        if (feeForThisTx && !feeAttached) {
+          row.feeLamports = feeForThisTx;
+          feeAttached = true;
+        }
+        spl.push(row);
       }
     }
 

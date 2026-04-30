@@ -16,6 +16,8 @@ export interface EvmTx {
   tokenSymbol?: string;      // ERC-20 transfers
   tokenDecimal?: string;
   isError?: string;
+  gasUsed?: string;          // for fee accounting
+  gasPrice?: string;         // wei per gas unit
 }
 
 async function fetchPage(baseUrl: string, params: Record<string, string>): Promise<EvmTx[]> {
