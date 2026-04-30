@@ -52,9 +52,14 @@ export default async function FifoPage() {
           amount: transactionLegs.amount,
           currency: transactionLegs.currency,
           location: transactionLegs.location,
+          createdAt: transactionLegs.createdAt,
         })
         .from(transactionLegs)
         .where(inArray(transactionLegs.transactionId, txRows.map((r) => r.id)))
+        // Greedy pairing in legsToFifoRows pairs adjacent direction-flips —
+        // the order must match the user's original entry sequence for multi-leg
+        // exchanges to land on the right per-leg cost basis.
+        .orderBy(transactionLegs.createdAt, transactionLegs.id)
     : [];
 
   const legsByTx = new Map<string, typeof legs>();

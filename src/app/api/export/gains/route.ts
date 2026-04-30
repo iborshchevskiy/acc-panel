@@ -33,9 +33,10 @@ export async function GET() {
 
   const legs = txRows.length > 0
     ? await db
-        .select({ transactionId: transactionLegs.transactionId, direction: transactionLegs.direction, amount: transactionLegs.amount, currency: transactionLegs.currency })
+        .select({ transactionId: transactionLegs.transactionId, direction: transactionLegs.direction, amount: transactionLegs.amount, currency: transactionLegs.currency, createdAt: transactionLegs.createdAt })
         .from(transactionLegs)
         .where(inArray(transactionLegs.transactionId, txRows.map((r) => r.id)))
+        .orderBy(transactionLegs.createdAt, transactionLegs.id)
     : [];
 
   const legsByTx = new Map<string, typeof legs>();

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runFifo, type FifoTxRow } from "./engine";
+import { runFifo, legsToFifoRows, type FifoTxRow } from "./engine";
 
 // In production: EUR/CZK/RUB are fiat, USDT is the pricing base (not fiat).
 const FIAT = new Set(["EUR", "CZK"]);
@@ -239,5 +239,158 @@ describe("runFifo", () => {
     // No meaningful USDT disposals anywhere
     const allDisposals = Object.values(result.pairs).flatMap((p) => p.disposals);
     expect(allDisposals).toHaveLength(0);
+  });
+});
+
+// ── legsToFifoRows ───────────────────────────────────────────────────────────
+// Greedy chronological pairing: when an Exchange has interleaved opposite-direction
+// legs (e.g. "out USDT, in EUR, in CZK, out USDT"), the engine pairs each in-leg
+// with the most recent unmatched out-leg (and vice-versa). This recovers the
+// per-leg cost basis instead of averaging USDT across all received fiats.
+
+interface TestLeg {
+  direction: string;
+  amount: string | null;
+  currency: string | null;
+  createdAt: string;
+}
+
+function leg(direction: "in" | "out", amount: string, currency: string, createdAt: string): TestLeg {
+  return { direction, amount, currency, createdAt };
+}
+
+function txMeta(id: string, timestamp: string) {
+  return { id, timestamp: new Date(timestamp), transactionType: "Exchange" };
+}
+
+describe("legsToFifoRows", () => {
+  it("pairs a simple 2-leg exchange into one row", () => {
+    const tx = txMeta("t1", "2026-01-01");
+    const legs = new Map([
+      ["t1", [
+        leg("out", "1000", "USDT", "2026-01-01T10:00:00Z"),
+        leg("in",  "900",  "EUR",  "2026-01-01T10:00:01Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([tx], legs);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      incomeCurrency: "EUR", incomeAmount: "900",
+      outcomeCurrency: "USDT", outcomeAmount: "1000",
+    });
+  });
+
+  it("regression: ilya 1130ed04 — 4-leg buy with split USDT cost basis", () => {
+    // Real production case: paid USDT separately for EUR side and CZK side.
+    // Legs were entered in this exact chronological order in the manual form.
+    // Before the fix, FIFO collapsed both USDT-out legs and split evenly,
+    // giving 10.235 CZK/USDT. After the fix, each USDT-out pairs with the
+    // adjacent in-leg, giving 1.165 USDT/EUR and 20.901 CZK/USDT (matches
+    // what Ilya sees on the on-chain transfer levels).
+    const tx = txMeta("buy", "2026-04-27T18:56:00Z");
+    const legs = new Map([
+      ["buy", [
+        leg("out", "18002.242", "USDT", "2026-04-28T00:41:50Z"),
+        leg("in",  "15450",     "EUR",  "2026-04-28T08:45:07Z"),
+        leg("in",  "122000",    "CZK",  "2026-04-28T08:45:20Z"),
+        leg("out", "5837.321",  "USDT", "2026-04-28T08:46:48Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([tx], legs);
+    expect(rows).toHaveLength(2);
+
+    const eurRow = rows.find((r) => r.incomeCurrency === "EUR")!;
+    const czkRow = rows.find((r) => r.incomeCurrency === "CZK")!;
+    expect(parseFloat(eurRow.outcomeAmount!)).toBeCloseTo(18002.242, 3);
+    expect(parseFloat(czkRow.outcomeAmount!)).toBeCloseTo(5837.321, 3);
+
+    // CZK rate after fix: 5837.321 USDT / 122000 CZK → 122000/5837.321 ≈ 20.901 CZK/USDT
+    const czkPerUsdt = parseFloat(czkRow.incomeAmount!) / parseFloat(czkRow.outcomeAmount!);
+    expect(czkPerUsdt).toBeCloseTo(20.901, 2);
+  });
+
+  it("downstream FIFO: ilya 1130ed04 sell of 1500 USDT settles at correct CZK rate", () => {
+    // Buy 122000 CZK for 5837.321 USDT (rate 20.901 CZK/USDT)
+    // Sell 1500 USDT for 31260 CZK (rate 20.84 CZK/USDT)
+    // Realized gain on the CZK leg: (rateSell - rateBuy) × CZK consumed.
+    // Selling 1500 USDT @ 20.84 means the FIFO consumes 31260 CZK from the lot.
+    // Gain in USDT = (1/20.84 - 1/20.901) × 31260 ≈ -4.39 USDT
+    // (i.e. tiny loss because the user received slightly less CZK per USDT than they paid).
+    const buy = txMeta("buy", "2026-04-27T18:56:00Z");
+    const sell = txMeta("sell", "2026-04-29T12:50:00Z");
+    const legs = new Map([
+      ["buy", [
+        leg("out", "18002.242", "USDT", "2026-04-28T00:41:50Z"),
+        leg("in",  "15450",     "EUR",  "2026-04-28T08:45:07Z"),
+        leg("in",  "122000",    "CZK",  "2026-04-28T08:45:20Z"),
+        leg("out", "5837.321",  "USDT", "2026-04-28T08:46:48Z"),
+      ]],
+      ["sell", [
+        leg("in",  "1500",  "USDT", "2026-04-29T12:50:00Z"),
+        leg("out", "31260", "CZK",  "2026-04-29T12:50:01Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([buy, sell], legs);
+    const result = runFifo(rows, FIAT);
+    const pair = result.pairs["CZK/USDT"];
+    expect(pair).toBeDefined();
+    expect(pair.disposals).toHaveLength(1);
+    // costRate (USDT per CZK) ≈ 5837.321 / 122000 = 0.04785
+    expect(pair.disposals[0].costRate).toBeCloseTo(5837.321 / 122000, 5);
+    // proceedsRate ≈ 1500 / 31260 = 0.04798
+    expect(pair.disposals[0].proceedsRate).toBeCloseTo(1500 / 31260, 5);
+    // Tiny gain in USDT
+    const expectedGain = (1500 / 31260 - 5837.321 / 122000) * 31260;
+    expect(pair.disposals[0].gain).toBeCloseTo(expectedGain, 3);
+  });
+
+  it("falls back to legacy split when legs are unbalanced (1 out + 2 in, no pairing possible)", () => {
+    // User entered only one out-leg but the funds bought two fiats in one swap.
+    // No greedy pairing is possible (one leg leftover) → fall back to legacy
+    // even-split semantics so totals are at least preserved.
+    const tx = txMeta("uneven", "2026-02-01");
+    const legs = new Map([
+      ["uneven", [
+        leg("out", "10000", "USDT", "2026-02-01T10:00:00Z"),
+        leg("in",  "5000",  "EUR",  "2026-02-01T10:00:01Z"),
+        leg("in",  "100000","CZK",  "2026-02-01T10:00:02Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([tx], legs);
+    expect(rows).toHaveLength(2);
+    // Each row gets half the USDT (legacy fallback behaviour).
+    for (const r of rows) expect(parseFloat(r.outcomeAmount!)).toBeCloseTo(5000);
+  });
+
+  it("merges multiple pairs sharing the same currency combo", () => {
+    // Two separate USDT→EUR chunks in one tx (e.g. partial fills).
+    // Greedy pairs them, then merging combines both into a single row.
+    const tx = txMeta("multi", "2026-03-01");
+    const legs = new Map([
+      ["multi", [
+        leg("out", "100", "USDT", "2026-03-01T10:00:00Z"),
+        leg("in",  "90",  "EUR",  "2026-03-01T10:00:01Z"),
+        leg("out", "200", "USDT", "2026-03-01T10:00:02Z"),
+        leg("in",  "180", "EUR",  "2026-03-01T10:00:03Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([tx], legs);
+    expect(rows).toHaveLength(1);
+    expect(parseFloat(rows[0].incomeAmount!)).toBeCloseTo(270);
+    expect(parseFloat(rows[0].outcomeAmount!)).toBeCloseTo(300);
+  });
+
+  it("ignores fee legs when pairing", () => {
+    const tx = txMeta("withfee", "2026-03-15");
+    const legs = new Map([
+      ["withfee", [
+        leg("out", "1000", "USDT", "2026-03-15T10:00:00Z"),
+        { direction: "fee", amount: "5", currency: "USDT", createdAt: "2026-03-15T10:00:01Z" },
+        leg("in",  "900",  "EUR",  "2026-03-15T10:00:02Z"),
+      ]],
+    ]);
+    const rows = legsToFifoRows([tx], legs);
+    expect(rows).toHaveLength(1);
+    expect(parseFloat(rows[0].outcomeAmount!)).toBeCloseTo(1000);
   });
 });
