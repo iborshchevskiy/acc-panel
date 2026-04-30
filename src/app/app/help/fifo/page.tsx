@@ -75,6 +75,27 @@ export default function FifoHelpPage() {
         </p>
       </Section>
 
+      {/* ── Multi-leg splits ──────────────────────────────────────────────── */}
+      <Section eyebrow="Multi-leg trades" title="One transfer paying for two currencies.">
+        <p className="help-prose">
+          Sometimes a single Exchange transaction has two recipients in
+          different currencies — you wire 24,000 USDT and receive 15,000 EUR
+          plus 100,000 CZK in one go. The engine has to decide how much of
+          the USDT counts as the cost basis of the EUR side and how much
+          counts toward the CZK side. It does so deterministically using{" "}
+          <strong>rate priors</strong>: the median buy/sell VWAP from your{" "}
+          <em>own</em> unambiguous trades for each pair. EUR gets weighted
+          by ~1.16 USDT/EUR, CZK by ~0.048 USDT/CZK, and the 24,000 USDT
+          splits in proportion to those USDT-equivalent values.
+        </p>
+        <p className="help-prose">
+          Same-currency cross-direction legs are netted first. If a row has
+          +100,000 CZK incoming and −1,200 CZK outgoing, the engine sees a
+          net +98,800 CZK acquired — the small offsetting amount doesn&rsquo;t
+          create a phantom CZK→CZK trade.
+        </p>
+      </Section>
+
       <Section eyebrow="Related" title="See also">
         <RelatedGrid
           items={[

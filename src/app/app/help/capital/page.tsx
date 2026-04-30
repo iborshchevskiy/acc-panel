@@ -30,6 +30,11 @@ export default function CapitalHelpPage() {
           Capital records and Clients records are stored in separate tables —
           no cross-contamination.
         </Note>
+        <p className="help-prose">
+          The currency input is also a typeahead — popular codes from your
+          own ledger come first (USDT typically wins), then alphabetical.
+          Type the first letter and press <strong>Tab</strong>.
+        </p>
       </Section>
 
       <Section eyebrow="Debts page" title="Receivables & payables.">

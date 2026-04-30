@@ -104,6 +104,52 @@ export default function ImportHelpPage() {
         </Note>
       </Section>
 
+      {/* ── Provider keys + error states ─────────────────────────────────── */}
+      <Section eyebrow="When import fails" title="The error is right next to the button.">
+        <p className="help-prose">
+          Every chain needs a provider key in env: <code>TRONGRID_API_KEY</code>,{" "}
+          <code>ETHERSCAN_API_KEY</code>, <code>BSCSCAN_API_KEY</code>, or{" "}
+          <code>HELIUS_API_KEY</code>. If a key is missing or invalid, the{" "}
+          <strong>Import</strong> button shows a one-line reason inline (not
+          just &ldquo;Error&rdquo;) — admin must set the key in Vercel and
+          redeploy. The raw error sits in the <code>title</code> attribute for
+          power users.
+        </p>
+      </Section>
+
+      {/* ── Decimal-format tolerance ─────────────────────────────────────── */}
+      <Section eyebrow="CSV decimal formats" title="Paste European spreadsheets without surgery.">
+        <p className="help-prose">
+          The CSV importer accepts every common decimal format an exchange
+          operator might paste:
+        </p>
+        <ul className="mt-2 space-y-1 list-none pl-0">
+          <li className="text-[13px] font-mono" style={{ color: "var(--text-2)" }}>
+            <span style={{ color: "var(--text-4)" }}>1234.56</span> — US/UK plain
+          </li>
+          <li className="text-[13px] font-mono" style={{ color: "var(--text-2)" }}>
+            <span style={{ color: "var(--text-4)" }}>1234,56</span> — EU plain
+          </li>
+          <li className="text-[13px] font-mono" style={{ color: "var(--text-2)" }}>
+            <span style={{ color: "var(--text-4)" }}>1,234.56</span> — US thousand-separator
+          </li>
+          <li className="text-[13px] font-mono" style={{ color: "var(--text-2)" }}>
+            <span style={{ color: "var(--text-4)" }}>1.234,56</span> — DE/CZ thousand-separator
+          </li>
+          <li className="text-[13px] font-mono" style={{ color: "var(--text-2)" }}>
+            <span style={{ color: "var(--text-4)" }}>1 234,56</span> — FR space-separator
+          </li>
+          <li className="text-[13px] font-mono" style={{ color: "var(--text-2)" }}>
+            <span style={{ color: "var(--text-4)" }}>1&apos;234.56</span> — Swiss apostrophe
+          </li>
+        </ul>
+        <p className="help-prose mt-3">
+          When both <code>,</code> and <code>.</code> appear, the last one is
+          treated as the decimal separator. Rows that fail to parse are
+          counted as errors and skipped instead of corrupting the DB.
+        </p>
+      </Section>
+
       <Section eyebrow="Related" title="See also">
         <RelatedGrid
           items={[

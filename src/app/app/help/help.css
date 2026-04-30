@@ -820,3 +820,31 @@
   }
   .help-sheen { display: none; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Mobile fallback — every scene is laid out at a desktop width that won't
+   fit a phone. Make the stage horizontally scrollable and pin a min-width
+   on each scene so the proportions don't collapse. The user can swipe to
+   pan; the loop keeps playing. */
+@media (max-width: 640px) {
+  .help-stage {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .scene-tx-stage     { min-width: 640px; }
+  .scene-wal-stage    { min-width: 520px; }
+  .scene-cli-stage    { min-width: 540px; }
+  .scene-csv-stage    { min-width: 480px; }
+  .scene-fifo-bars    { min-width: 360px; }
+
+  /* Tighter prose so help pages read without horizontal pinch on phones. */
+  .help-prose { font-size: 14px; }
+
+  /* Subtle scrollbar styling so the scrollbar doesn't dominate the stage. */
+  .help-stage::-webkit-scrollbar { height: 4px; }
+  .help-stage::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-1) 18%, transparent);
+    border-radius: 2px;
+  }
+}

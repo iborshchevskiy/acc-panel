@@ -163,6 +163,33 @@ export default function TransactionsHelpPage() {
         </p>
       </Section>
 
+      {/* ── Split into parts ─────────────────────────────────────────────── */}
+      <Section eyebrow="Splitting one row into many" title="When one transfer covers two stories.">
+        <p className="help-prose">
+          A single on-chain payment can sometimes be two unrelated bookings —
+          half is an Exchange with one client, the other half is a Debt with
+          another. Open the row in <strong>edit</strong> mode and click{" "}
+          <strong>Split into parts</strong>. The form replaces the leg editor
+          with N equal-sized child blanks and a <em>remaining</em> indicator
+          for every direction × currency.
+        </p>
+        <p className="help-prose">
+          Distribute the legs across parts however you like — different types,
+          different clients, different statuses, different comments. The
+          Apply button stays disabled until each (direction, currency) sums
+          back to the original within rounding. The split is atomic: the
+          parent row is soft-deleted, the children appear in its place, and
+          the audit log records the lineage so you can rebuild the original
+          if needed.
+        </p>
+        <p className="help-prose">
+          European decimal formats are accepted in the part fields — type{" "}
+          <code>1.234,56</code> or <code>1,234.56</code> or{" "}
+          <code>1 234,56</code> and the parser treats the last separator as
+          the decimal point.
+        </p>
+      </Section>
+
       <Section eyebrow="Related" title="See also">
         <RelatedGrid
           items={[
