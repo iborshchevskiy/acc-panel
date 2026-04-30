@@ -4,9 +4,10 @@ import { db } from "@/db/client";
 import { transactions, transactionLegs } from "@/db/schema/transactions";
 import { currencies } from "@/db/schema/wallets";
 import { organizationMembers } from "@/db/schema/system";
-import { eq, and, sql, isNull, gte, lte } from "drizzle-orm";
+import { eq, and, sql, isNull, gte, lte, inArray } from "drizzle-orm";
 import RefreshButton from "@/components/refresh-button";
 import CustomRangePicker from "./CustomRangePicker";
+import { runFifo, legsToFifoRows } from "@/lib/fifo/engine";
 
 interface PageProps {
   searchParams: Promise<{ bucket?: string; from?: string; to?: string }>;
@@ -407,6 +408,103 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     ? ((last.tradeCount - prev.tradeCount) / prev.tradeCount) * 100
     : null;
 
+  // ── Realized FIFO gain ──────────────────────────────────────────────────
+  // Same engine as /app/fifo. Scoped to Exchange + non-deleted; period
+  // filter is applied AFTER the engine runs so we don't lose the historical
+  // rate priors that make multi-leg splits work correctly. Per-period
+  // realised gain is bucketed from the disposal list.
+  const fifoSet = new Set(fiatList);
+  const fifoTxs = await db
+    .select({ id: transactions.id, timestamp: transactions.timestamp, transactionType: transactions.transactionType })
+    .from(transactions)
+    .where(and(
+      eq(transactions.organizationId, orgId),
+      eq(transactions.transactionType, "Exchange"),
+      isNull(transactions.deletedAt),
+    ))
+    .orderBy(transactions.timestamp);
+  const fifoLegs = fifoTxs.length > 0
+    ? await db.select({
+        transactionId: transactionLegs.transactionId,
+        direction: transactionLegs.direction,
+        amount: transactionLegs.amount,
+        currency: transactionLegs.currency,
+        createdAt: transactionLegs.createdAt,
+      })
+      .from(transactionLegs)
+      .where(inArray(transactionLegs.transactionId, fifoTxs.map((r) => r.id)))
+      .orderBy(transactionLegs.createdAt, transactionLegs.id)
+    : [];
+  const fifoLegsByTx = new Map<string, typeof fifoLegs>();
+  for (const l of fifoLegs) {
+    const arr = fifoLegsByTx.get(l.transactionId) ?? [];
+    arr.push(l);
+    fifoLegsByTx.set(l.transactionId, arr);
+  }
+  const fifoResult = runFifo(legsToFifoRows(fifoTxs, fifoLegsByTx), fifoSet);
+
+  // Filter disposals to the active period (when isCustom). Revenue/expense
+  // aggregations already respect the filter via dateConditions/periodAggs.
+  const periodFromDate = isCustom && customFrom ? new Date(customFrom).getTime() : -Infinity;
+  const periodToDate = isCustom && customTo ? new Date(customTo + "T23:59:59").getTime() : Infinity;
+  const allDisposals = Object.values(fifoResult.pairs).flatMap((p) => p.disposals);
+  const inPeriodDisposals = allDisposals.filter((d) => {
+    const t = d.disposedAt.getTime();
+    return t >= periodFromDate && t <= periodToDate;
+  });
+  const realizedGainByCurrency = new Map<string, number>();
+  for (const d of inPeriodDisposals) {
+    realizedGainByCurrency.set(d.gainCurrency, (realizedGainByCurrency.get(d.gainCurrency) ?? 0) + d.gain);
+  }
+  const realizedGainUsdt = realizedGainByCurrency.get("USDT") ?? 0;
+
+  // Realized gain per period bucket (group disposals by their disposedAt
+  // truncated to the active bucket).
+  const truncToBucket = (d: Date): string => {
+    if (bucket === "month") return d.toISOString().slice(0, 7);
+    if (bucket === "day") return d.toISOString().slice(0, 10);
+    // week — Mon-anchored ISO week start
+    const day = d.getUTCDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setUTCDate(d.getUTCDate() + diff);
+    return monday.toISOString().slice(0, 10);
+  };
+  const realizedByPeriod = new Map<string, number>();
+  for (const d of inPeriodDisposals) {
+    if (d.gainCurrency !== "USDT") continue;
+    const key = truncToBucket(d.disposedAt);
+    realizedByPeriod.set(key, (realizedByPeriod.get(key) ?? 0) + d.gain);
+  }
+
+  // ── Revenue + Expense (already in period buckets, surface as totals) ───
+  const totalRevenueByCurrency = new Map<string, number>();
+  for (const p of periods) {
+    for (const [cur, amt] of Object.entries(p.revenue)) {
+      totalRevenueByCurrency.set(cur, (totalRevenueByCurrency.get(cur) ?? 0) + amt);
+    }
+  }
+  // Revenue in USDT-eq using the same conversion table.
+  let revenueUsdt = 0;
+  for (const [cur, amt] of totalRevenueByCurrency) {
+    const r = rateToUsdt.get(cur);
+    if (r != null) revenueUsdt += amt * r;
+  }
+
+  // Per-period revenue (sum across currencies, USDT-eq).
+  const revenueByPeriod = new Map<string, number>();
+  for (const p of periods) {
+    let usdt = 0;
+    for (const [cur, amt] of Object.entries(p.revenue)) {
+      const r = rateToUsdt.get(cur);
+      if (r != null) usdt += amt * r;
+    }
+    if (usdt !== 0) revenueByPeriod.set(p.period, usdt);
+  }
+
+  // Total Income = realized gain (USDT) + revenue (USDT-eq).
+  const totalIncomeUsdt = realizedGainUsdt + revenueUsdt;
+
 
   // ── Visualization helpers ────────────────────────────────────────────────
   // Build a tiny SVG line+area path for a series of values normalised to a
@@ -485,8 +583,28 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
         </div>
       </header>
 
-      {/* ── KPI STRIP ───────────────────────────────────────────────────── */}
+      {/* ── PRIMARY KPI STRIP ──────────────────────────────────────────── */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard
+          label="Realized Gain"
+          value={realizedGainUsdt !== 0
+            ? `${realizedGainUsdt >= 0 ? "+" : ""}${realizedGainUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+            : "0"}
+          sub={`USDT · ${inPeriodDisposals.length} disposal${inPeriodDisposals.length === 1 ? "" : "s"}`}
+          accent={realizedGainUsdt >= 0 ? "var(--accent)" : "var(--red)"}
+          valueColor={realizedGainUsdt > 0 ? "var(--accent)" : realizedGainUsdt < 0 ? "var(--red)" : "var(--text-2)"}
+        />
+        <KpiCard
+          label="Revenue"
+          value={revenueUsdt > 0
+            ? revenueUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })
+            : "0"}
+          sub={totalRevenueByCurrency.size > 0
+            ? `USDT-eq · ${[...totalRevenueByCurrency.keys()].slice(0, 3).join(", ")}${totalRevenueByCurrency.size > 3 ? "…" : ""}`
+            : "no Revenue txs"}
+          accent="var(--accent)"
+          valueColor={revenueUsdt > 0 ? "var(--accent)" : "var(--text-2)"}
+        />
         <KpiCard
           label="Exchange Trades"
           value={exchangeTxs.toLocaleString()}
@@ -504,8 +622,62 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
                 ? ` · excl. ${[...unknownRateCurrencies].slice(0, 2).join(", ")}${unknownRateCurrencies.size > 2 ? "…" : ""}`
                 : ""}`
             : "need a USDT pair"}
-          accent="var(--accent)"
+          accent="var(--amber)"
         />
+      </section>
+
+      {/* ── INCOME SUMMARY (Realized Gain + Revenue = Total Income) ────── */}
+      <section className="rounded-xl px-4 py-4" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Income Breakdown</h2>
+          <span className="text-[10px]" style={{ color: "var(--text-4)" }}>USDT-equivalent</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <IncomeRow
+            label="Realized FIFO gain"
+            value={realizedGainUsdt}
+            hint="from Exchange disposals"
+          />
+          <IncomeRow
+            label="Revenue income"
+            value={revenueUsdt}
+            hint={totalRevenueByCurrency.size > 0
+              ? [...totalRevenueByCurrency.entries()]
+                  .map(([c, a]) => `${a.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${c}`)
+                  .join(" · ")
+              : "—"}
+          />
+          <IncomeRow
+            label="Total income"
+            value={totalIncomeUsdt}
+            hint="gain + revenue"
+            emphasised
+          />
+        </div>
+
+        {/* Realized gain by other currencies (e.g. EUR/USDC pairs) */}
+        {realizedGainByCurrency.size > 1 && (
+          <div className="mt-4 pt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5"
+            style={{ borderTop: "1px solid var(--border)" }}>
+            <span className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
+              Gain by gain-currency
+            </span>
+            {[...realizedGainByCurrency.entries()]
+              .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+              .map(([cur, gain]) => (
+                <span key={cur} className="text-xs font-mono" style={{
+                  color: gain >= 0 ? "var(--accent)" : "var(--red)",
+                }}>
+                  {gain >= 0 ? "+" : ""}{gain.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  <span className="ml-1" style={{ color: "var(--text-4)" }}>{cur}</span>
+                </span>
+              ))}
+          </div>
+        )}
+      </section>
+
+      {/* Secondary stats: margin + fees */}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-2">
         <KpiCard
           label="Avg Margin"
           value={avgMargin != null ? `${avgMargin >= 0 ? "+" : ""}${avgMargin.toFixed(2)}%` : "—"}
@@ -738,6 +910,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   <th className="px-4 py-2.5 text-left text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Period</th>
                   <th className="px-4 py-2.5 text-right text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Trades</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Gain</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Revenue</th>
                   {topCurrencies.map((c) => (
                     <th key={c} className="px-4 py-2.5 text-right text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Net {c}</th>
                   ))}
@@ -748,10 +922,26 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
                 {[...periods].reverse().map((p, i, arr) => {
                   const periodVolume = Object.values(p.volume).reduce((a, b) => a + b, 0);
                   const volBar = maxBucketVolume > 0 ? periodVolume / maxBucketVolume : 0;
+                  const gain = realizedByPeriod.get(p.period) ?? 0;
+                  const rev = revenueByPeriod.get(p.period) ?? 0;
                   return (
                     <tr key={p.period} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
                       <td className="px-4 py-2.5 text-xs font-mono" style={{ color: "var(--text-2)" }}>{p.label}</td>
                       <td className="px-4 py-2.5 text-xs font-mono text-right" style={{ color: "var(--text-3)" }}>{p.tradeCount}</td>
+                      <td className="px-4 py-2.5 text-xs font-mono text-right">
+                        {gain !== 0 ? (
+                          <span style={{ color: gain > 0 ? "var(--accent)" : "var(--red)" }}>
+                            {gain > 0 ? "+" : ""}{gain.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </span>
+                        ) : <span style={{ color: "var(--text-4)" }}>—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs font-mono text-right">
+                        {rev !== 0 ? (
+                          <span style={{ color: "var(--accent)" }}>
+                            +{rev.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </span>
+                        ) : <span style={{ color: "var(--text-4)" }}>—</span>}
+                      </td>
                       {topCurrencies.map((c) => {
                         const v = p.exchangePnl[c] ?? 0;
                         return (
@@ -787,6 +977,16 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
                   <td className="px-4 py-2.5 text-xs font-medium" style={{ color: "var(--text-2)" }}>Total</td>
                   <td className="px-4 py-2.5 text-xs font-mono text-right" style={{ color: "var(--text-2)" }}>
                     {periods.reduce((s, p) => s + p.tradeCount, 0)}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs font-mono font-medium text-right">
+                    <span style={{ color: realizedGainUsdt > 0 ? "var(--accent)" : realizedGainUsdt < 0 ? "var(--red)" : "var(--text-4)" }}>
+                      {realizedGainUsdt !== 0 ? `${realizedGainUsdt > 0 ? "+" : ""}${realizedGainUsdt.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs font-mono font-medium text-right">
+                    <span style={{ color: revenueUsdt > 0 ? "var(--accent)" : "var(--text-4)" }}>
+                      {revenueUsdt !== 0 ? `+${revenueUsdt.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
+                    </span>
                   </td>
                   {topCurrencies.map((c) => {
                     const v = totalExchangePnl.get(c) ?? 0;
@@ -902,6 +1102,38 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
 }
 
 // ── Tiny components ────────────────────────────────────────────────────────
+function IncomeRow({
+  label, value, hint, emphasised,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  emphasised?: boolean;
+}) {
+  const positive = value >= 0;
+  return (
+    <div className="flex flex-col gap-1 px-3 py-3 rounded-lg"
+      style={{
+        backgroundColor: emphasised ? "var(--raised-hi)" : "var(--raised)",
+        border: emphasised ? "1px solid color-mix(in srgb, var(--accent) 40%, var(--border))" : "1px solid var(--inner-border)",
+      }}>
+      <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
+        {label}
+      </p>
+      <p className={`font-[family-name:var(--font-ibm-plex-mono)] ${emphasised ? "text-2xl" : "text-xl"} font-medium leading-none`}
+        style={{ color: value === 0 ? "var(--text-3)" : positive ? "var(--accent)" : "var(--red)" }}>
+        {value === 0 ? "—" : `${positive ? "+" : ""}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+        <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>USDT</span>
+      </p>
+      {hint && (
+        <p className="text-[10px] font-mono truncate" style={{ color: "var(--text-4)" }} title={hint}>
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function KpiCard({
   label, value, sub, delta, deltaLabel, accent, valueColor,
 }: {
