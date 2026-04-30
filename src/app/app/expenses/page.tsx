@@ -76,13 +76,16 @@ export default async function ExpensesPage() {
     clientByTx.set(r.transactionId, { id: r.id, name: r.name, surname: r.surname, tgUsername: null });
   }
 
-  // MTD total
+  // MTD total — UTC start to match dashboard's mtdStart (audit Bug A8).
+  // Includes both `out` legs (the principal expense) AND `fee` legs (bank
+  // fees, gas, etc.) — both are real outflows that hit the books (audit A6).
   const now = new Date();
-  const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const mtdRows = rows.filter((r) => new Date(r.timestamp) >= mtdStart);
-  const mtdByLeg = legs.filter((l) => mtdRows.some((r) => r.id === l.transactionId) && l.direction === "out");
+  const mtdStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const mtdTxIds = new Set(rows.filter((r) => new Date(r.timestamp) >= mtdStart).map((r) => r.id));
   const mtdByCurrency: Record<string, number> = {};
-  for (const l of mtdByLeg) {
+  for (const l of legs) {
+    if (!mtdTxIds.has(l.transactionId)) continue;
+    if (l.direction !== "out" && l.direction !== "fee") continue;
     const cur = l.currency ?? "?";
     mtdByCurrency[cur] = (mtdByCurrency[cur] ?? 0) + parseFloat(l.amount ?? "0");
   }

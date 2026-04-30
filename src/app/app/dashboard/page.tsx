@@ -274,14 +274,19 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* ── HERO: Period P&L ────────────────────────────────────────────────── */}
+      {/* ── HERO: Period currency flow from Exchanges ───────────────────────
+           This is *not* realized P&L (which lives on /app/fifo). It's the net
+           amount of each currency the desk has acquired or paid out from
+           Exchange transactions in the period — the inventory exposure. ──── */}
       <div className="rounded-2xl overflow-hidden"
         style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
         <div className="px-4 pt-4 pb-1 flex items-center justify-between sm:px-5 sm:pt-5">
           <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>
-            Net P&amp;L · {periodLabel}
+            Currency Flow · {periodLabel}
           </p>
-          <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>Exchange</span>
+          <Link href="/app/fifo" className="text-[10px] font-mono transition-opacity hover:opacity-70" style={{ color: "var(--text-4)" }}>
+            realized P&amp;L → FIFO
+          </Link>
         </div>
         <div className="px-4 pb-4 sm:px-5 sm:pb-5">
           {mtdNetFlowRows.length === 0 ? (

@@ -98,6 +98,23 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     ORDER BY 1
   `) as unknown as PeriodAgg[];
 
+  // Trade count per period — independent of leg join, so multi-currency Exchange
+  // txs aren't undercounted (audit Bug A1: April 2026 had 79 real Exchange txs
+  // but the per-leg max(distinct) gave 50 because EUR-in and CZK-in are
+  // disjoint sets of txs).
+  const periodCountAggs = await db.execute(sql`
+    SELECT ${dateTruncExpr} AS period,
+           COUNT(DISTINCT t.id)::int AS trade_count
+      FROM ${transactions} t
+     WHERE t.organization_id = ${orgId}
+       AND t.deleted_at IS NULL
+       AND t.transaction_type = 'Exchange'
+       ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
+       ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
+     GROUP BY 1
+  `) as unknown as Array<{ period: string; trade_count: number }>;
+  const tradeCountByPeriod = new Map(periodCountAggs.map((r) => [r.period, r.trade_count]));
+
   // ── Build period buckets from aggregated rows ────────────────────────────
   const periodMap = new Map<string, {
     period: string; label: string;
@@ -112,7 +129,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       periodMap.set(row.period, {
         period: row.period,
         label: buildPeriodLabel(row.period, bucket),
-        exchangePnl: {}, revenue: {}, volume: {}, tradeCount: 0,
+        exchangePnl: {}, revenue: {}, volume: {}, tradeCount: tradeCountByPeriod.get(row.period) ?? 0,
       });
     }
     const b = periodMap.get(row.period)!;
@@ -124,7 +141,6 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       const sign = row.direction === "in" ? 1 : -1;
       b.exchangePnl[cur] = (b.exchangePnl[cur] ?? 0) + sign * amt;
       b.volume[cur] = (b.volume[cur] ?? 0) + amt;
-      if (row.direction === "in") b.tradeCount = Math.max(b.tradeCount, parseInt(row.trade_count) || 0);
     } else if (row.transaction_type === "Revenue" && row.direction === "in") {
       b.revenue[cur] = (b.revenue[cur] ?? 0) + amt;
     }
@@ -151,55 +167,79 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     .map(([c]) => c);
 
   // ── Spread analysis — SQL aggregated per pair/side ───────────────────────
-  // We use the org's fiat currencies to identify buy vs sell side
+  // Audit Bug A2: the previous JOIN-on-legs cross-multiplied multi-leg txs
+  // (e.g. tx 1130ed04 with 2 in + 2 out legs produced 4 rows, blowing up
+  // counts and skewing AVG). Audit also caught arithmetic-mean rates instead
+  // of volume-weighted (VWAP) — for an exchanger, VWAP is the only honest
+  // average rate.
+  //
+  // Fix: pre-aggregate same-currency same-direction legs per tx in a CTE,
+  // restrict to txs that are 1×1 fiat/non-fiat after netting (multi-currency
+  // Exchanges are FIFO's domain, not spread analysis), then use VWAP per side.
 
   let spreadAggs: SpreadAgg[] = [];
   if (fiatList.length > 0) {
     const fiatArray = sql`ARRAY[${sql.raw(fiatList.map((f) => `'${f.replace(/'/g, "''")}'`).join(","))}]::text[]`;
 
     spreadAggs = await db.execute(sql`
-      SELECT
-        CASE
-          WHEN tl_in.currency = ANY(${fiatArray}) THEN tl_out.currency || '/' || tl_in.currency
-          ELSE tl_in.currency || '/' || tl_out.currency
-        END AS pair,
-        CASE
-          WHEN tl_in.currency = ANY(${fiatArray}) THEN 'SELL'
-          ELSE 'BUY'
-        END AS side,
-        AVG(
-          CASE
-            WHEN tl_in.currency = ANY(${fiatArray})
-              THEN tl_in.amount::numeric / NULLIF(tl_out.amount::numeric, 0)
-            ELSE tl_out.amount::numeric / NULLIF(tl_in.amount::numeric, 0)
-          END
-        )::text AS avg_rate,
-        COUNT(*)::text AS trade_count,
-        SUM(
-          CASE
-            WHEN tl_in.currency = ANY(${fiatArray})
-              THEN tl_out.amount::numeric
-            ELSE tl_in.amount::numeric
-          END
-        )::text AS volume
-      FROM ${transactions} t
-      JOIN ${transactionLegs} tl_in  ON tl_in.transaction_id  = t.id AND tl_in.direction  = 'in'
-      JOIN ${transactionLegs} tl_out ON tl_out.transaction_id = t.id AND tl_out.direction = 'out'
-      WHERE t.organization_id = ${orgId}
-        AND t.deleted_at IS NULL
-        AND t.transaction_type = 'Exchange'
-        ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
-        ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
-        AND (
-          (tl_in.currency = ANY(${fiatArray}) AND tl_out.currency != ANY(${fiatArray}))
-          OR
-          (tl_out.currency = ANY(${fiatArray}) AND tl_in.currency != ANY(${fiatArray}))
-        )
-      GROUP BY pair, side
-      ORDER BY SUM(
-        CASE WHEN tl_in.currency = ANY(${fiatArray}) THEN tl_out.amount::numeric ELSE tl_in.amount::numeric END
-      ) DESC
-      LIMIT 20
+      WITH per_tx_dir AS (
+        SELECT t.id,
+               tl.direction,
+               tl.currency,
+               SUM(tl.amount::numeric) AS amount
+          FROM ${transactions} t
+          JOIN ${transactionLegs} tl ON tl.transaction_id = t.id
+         WHERE t.organization_id = ${orgId}
+           AND t.deleted_at IS NULL
+           AND t.transaction_type = 'Exchange'
+           AND tl.direction IN ('in','out')
+           AND tl.currency IS NOT NULL
+           ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
+           ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
+         GROUP BY t.id, tl.direction, tl.currency
+      ),
+      single_pair AS (
+        -- Keep only txs with exactly one in-currency and one out-currency
+        -- after netting. Multi-currency Exchanges (e.g. paid USDT for EUR + CZK)
+        -- are intentionally excluded — their per-side rate is ambiguous and
+        -- belongs to FIFO's domain, not the spread report.
+        SELECT id,
+               MAX(CASE WHEN direction='in'  THEN currency END) AS in_cur,
+               MAX(CASE WHEN direction='in'  THEN amount   END) AS in_amt,
+               MAX(CASE WHEN direction='out' THEN currency END) AS out_cur,
+               MAX(CASE WHEN direction='out' THEN amount   END) AS out_amt
+          FROM per_tx_dir
+         GROUP BY id
+        HAVING COUNT(*) FILTER (WHERE direction='in')  = 1
+           AND COUNT(*) FILTER (WHERE direction='out') = 1
+      ),
+      classified AS (
+        SELECT
+          CASE WHEN in_cur = ANY(${fiatArray}) THEN out_cur || '/' || in_cur
+               ELSE in_cur || '/' || out_cur END AS pair,
+          CASE WHEN in_cur = ANY(${fiatArray}) THEN 'SELL' ELSE 'BUY' END AS side,
+          -- Always express rate as fiat-per-non-fiat (e.g. CZK per USDT).
+          CASE WHEN in_cur = ANY(${fiatArray})
+               THEN in_amt    -- fiat received
+               ELSE out_amt   -- fiat paid
+          END AS fiat_amt,
+          CASE WHEN in_cur = ANY(${fiatArray})
+               THEN out_amt   -- non-fiat paid
+               ELSE in_amt    -- non-fiat received
+          END AS base_amt
+          FROM single_pair
+         WHERE (in_cur  = ANY(${fiatArray}) AND NOT out_cur = ANY(${fiatArray}))
+            OR (out_cur = ANY(${fiatArray}) AND NOT in_cur  = ANY(${fiatArray}))
+      )
+      SELECT pair,
+             side,
+             (SUM(fiat_amt) / NULLIF(SUM(base_amt), 0))::text AS avg_rate,  -- VWAP
+             COUNT(*)::text AS trade_count,
+             SUM(fiat_amt)::text AS volume
+        FROM classified
+       GROUP BY pair, side
+       ORDER BY SUM(fiat_amt) DESC
+       LIMIT 20
     `) as unknown as SpreadAgg[];
   }
 
