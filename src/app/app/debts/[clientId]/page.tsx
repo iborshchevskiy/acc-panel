@@ -144,6 +144,50 @@ export default async function DebtClientPage({ params }: PageProps) {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
+          {/* Mobile cards */}
+          <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+            {txRows.map((tx, i) => {
+              const txLegs = legsByTx.get(tx.id) ?? [];
+              const ins  = txLegs.filter((l) => l.direction === "in");
+              const outs = txLegs.filter((l) => l.direction === "out");
+              const typeColor = TX_TYPE_COLORS[tx.transactionType ?? ""] ?? "var(--text-3)";
+              return (
+                <Link key={tx.id} href={`/app/transactions?tx=${tx.id}`}
+                  className="px-4 py-3 flex flex-col gap-1.5 active:opacity-70"
+                  style={{ borderBottom: i < txRows.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      {new Date(tx.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    </span>
+                    <span className="text-xs font-medium" style={{ color: typeColor }}>
+                      {tx.transactionType ?? "—"}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-0.5 text-xs font-mono">
+                    {outs.map((l, j) => (
+                      <span key={`out-${j}`} style={{ color: "var(--red)" }}>
+                        −{parseFloat(l.amount as string).toLocaleString(undefined, { maximumFractionDigits: 4 })} {l.currency}
+                      </span>
+                    ))}
+                    {ins.map((l, j) => (
+                      <span key={`in-${j}`} style={{ color: "var(--accent)" }}>
+                        +{parseFloat(l.amount as string).toLocaleString(undefined, { maximumFractionDigits: 4 })} {l.currency}
+                      </span>
+                    ))}
+                    {txLegs.length === 0 && <span className="text-slate-600">—</span>}
+                  </div>
+                  {(tx.location || tx.comment) && (
+                    <div className="text-[11px] text-slate-500 flex flex-col gap-0.5">
+                      {tx.location && <span>{tx.location}</span>}
+                      {tx.comment && <span className="truncate">{tx.comment}</span>}
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
@@ -207,6 +251,7 @@ export default async function DebtClientPage({ params }: PageProps) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

@@ -1067,8 +1067,113 @@ export default function TransactionTable({
 
   return (
     <div className="relative md:flex md:flex-col md:flex-1 md:min-h-0">
+      {/* Mobile cards — replaces the 1100px table on narrow screens. */}
+      <div className="sm:hidden flex flex-col">
+        {rows.map((tx, i) => {
+          const txLegs = legsByTx.get(tx.id) ?? [];
+          const inLegs  = txLegs.filter((l) => l.direction === "in");
+          const outLegs = txLegs.filter((l) => l.direction === "out");
+          const isLast = i === rows.length - 1;
+          const isEditing = editingId === tx.id;
+          const isChecked = selected.has(tx.id);
+          const explorerUrl = tx.txHash ? `https://tronscan.org/#/transaction/${tx.txHash}` : null;
+          const showsReview = tx.type === "Trade" && (!tx.transactionType || !txTypes.includes(tx.transactionType)) && !tx.status && !clientByTx[tx.id];
+          const rates = calcRates(inLegs, outLegs);
+          return (
+            <Fragment key={`m-${tx.id}`}>
+              <div className="px-3 py-3 flex flex-col gap-2"
+                style={{
+                  backgroundColor: isChecked ? "rgba(16,185,129,0.05)"
+                    : isEditing ? "var(--raised-hi)"
+                    : "var(--surface)",
+                  borderBottom: isEditing ? "none" : isLast ? "none" : "1px solid var(--inner-border)",
+                  opacity: isPending && isChecked ? 0.5 : 1,
+                  transition: "background-color 0.15s, opacity 0.15s",
+                }}>
+                {/* Top row: checkbox · date · edit/delete */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <input type="checkbox" checked={isChecked} onChange={() => toggleRow(tx.id)}
+                      style={{ accentColor: "var(--accent)", cursor: "pointer", width: 14, height: 14 }} />
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[11px] font-mono text-slate-500">
+                        {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
+                      </span>
+                      <button type="button" title={tx.id} onClick={() => navigator.clipboard.writeText(tx.id)}
+                        className="text-[9px] font-mono text-slate-700 self-start">
+                        {tx.id.slice(0, 8)}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <button type="button"
+                      onClick={() => setEditingId(isEditing ? null : tx.id)}
+                      className="text-xs transition-colors"
+                      style={{ color: isEditing ? "var(--accent)" : "var(--text-3)" }}>
+                      {isEditing ? "✕" : "edit"}
+                    </button>
+                    <form action={deleteTransaction}>
+                      <input type="hidden" name="tx_id" value={tx.id} />
+                      <button type="submit" className="text-xs text-slate-700 hover:text-red-400 transition-colors">×</button>
+                    </form>
+                  </div>
+                </div>
+                {/* Type + status pickers */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {showsReview && <ReviewBadge />}
+                  <TypePicker txId={tx.id} current={tx.transactionType} txTypes={txTypes} />
+                  <StatusPicker txId={tx.id} current={tx.status} />
+                </div>
+                {/* Legs */}
+                {(inLegs.length > 0 || outLegs.length > 0) && (
+                  <div className="flex flex-col gap-1.5">
+                    {inLegs.length > 0 && <LegStack legs={inLegs} direction="in" txId={tx.id} currencyCodes={currencyCodes} />}
+                    {outLegs.length > 0 && <LegStack legs={outLegs} direction="out" txId={tx.id} currencyCodes={currencyCodes} />}
+                  </div>
+                )}
+                {/* Rate */}
+                {rates.length > 0 && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                    {rates.map((r, j) => (
+                      <span key={j} className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>@ {r}</span>
+                    ))}
+                  </div>
+                )}
+                {/* Client + TxID */}
+                <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5"
+                  style={{ borderTop: "1px dashed var(--inner-border)" }}>
+                  <ClientPicker txId={tx.id} current={clientByTx[tx.id] ?? null} clients={orgClients} />
+                  {explorerUrl && tx.txHash ? (
+                    <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] font-mono text-slate-600" title={tx.txHash}>
+                      {tx.txHash.slice(0, 8)}…
+                    </a>
+                  ) : <span className="text-[10px] font-mono text-slate-700">manual</span>}
+                </div>
+              </div>
+              {isEditing && (
+                <div style={{
+                  borderBottom: isLast ? "none" : "1px solid var(--inner-border)",
+                  backgroundColor: "var(--raised-hi)",
+                }}>
+                  <InlineEditForm
+                    tx={tx}
+                    legRows={legsByTx.get(tx.id) ?? []}
+                    txTypes={txTypes}
+                    currencyCodes={currencyCodes}
+                    orgClients={orgClients}
+                    onClose={closeEdit}
+                  />
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+
+      {/* Desktop table — kept verbatim, hidden on mobile. */}
       <div
-        className="overflow-auto md:flex-1 md:min-h-0"
+        className="hidden sm:block overflow-auto md:flex-1 md:min-h-0"
         style={{
           // overscroll-behavior contain stops scroll-chaining at the table's
           // edges (no body bounce on iPad/Mac trackpads). On desktop the

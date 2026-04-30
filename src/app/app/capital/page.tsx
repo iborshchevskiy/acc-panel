@@ -120,7 +120,36 @@ export default async function CapitalPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
-         <div className="overflow-x-auto">
+         {/* Mobile cards */}
+         <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+           {rows.map((r, i) => (
+             <div key={r.id} className="px-4 py-3 flex flex-col gap-1.5"
+               style={{ borderBottom: i < rows.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
+               <div className="flex items-baseline justify-between gap-2">
+                 <span className="text-sm text-slate-200 font-medium">{r.investor}</span>
+                 <span className="text-[10px] font-mono text-slate-500">{new Date(r.date).toLocaleDateString()}</span>
+               </div>
+               <div className="flex items-center justify-between gap-2">
+                 <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium"
+                   style={r.type === "deposit"
+                     ? { backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }
+                     : { backgroundColor: "var(--red-chip-bg)", color: "var(--red)" }}>
+                   {r.type}
+                 </span>
+                 <span className="text-sm font-mono"
+                   style={{ color: r.type === "deposit" ? "var(--accent)" : "var(--red)" }}>
+                   {r.type === "deposit" ? "+" : "-"}{parseFloat(r.amount as string).toLocaleString(undefined, { maximumFractionDigits: 2 })} {r.currency}
+                 </span>
+               </div>
+               {r.comment && <p className="text-[11px] text-slate-500 truncate">{r.comment}</p>}
+               <form action={deleteCashOperation.bind(null, r.id)} className="self-end">
+                 <button type="submit" className="text-[11px] text-slate-600 hover:text-red-400 transition-colors">remove</button>
+               </form>
+             </div>
+           ))}
+         </div>
+         {/* Desktop table */}
+         <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm" style={{ minWidth: 640 }}>
             <thead>
               <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>

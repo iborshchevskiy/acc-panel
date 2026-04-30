@@ -77,7 +77,32 @@ export default async function ClientsPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
-         <div className="overflow-x-auto">
+         {/* Mobile cards */}
+         <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+           {rows.map((c, i) => (
+             <Link key={c.id} href={`/app/clients/${c.id}`} className="px-4 py-3 flex flex-col gap-1 active:opacity-70"
+               style={{ borderBottom: i < rows.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
+               <div className="flex items-baseline justify-between gap-2">
+                 <span className="font-medium text-slate-200 text-sm">
+                   {c.name}{c.surname ? ` ${c.surname}` : ""}
+                 </span>
+                 <span className="text-[10px] font-mono text-slate-600">
+                   {new Date(c.createdAt).toLocaleDateString()}
+                 </span>
+               </div>
+               <div className="flex items-center gap-2 text-xs">
+                 {c.tgUsername && <span className="text-slate-500">@{c.tgUsername}</span>}
+                 <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px]"
+                   style={{ backgroundColor: "var(--green-chip-bg)", color: "var(--accent)" }}>
+                   {c.walletCount} wallet{c.walletCount !== 1 ? "s" : ""}
+                 </span>
+               </div>
+               {c.note && <p className="text-[11px] text-slate-500 truncate">{c.note}</p>}
+             </Link>
+           ))}
+         </div>
+         {/* Desktop table */}
+         <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm" style={{ minWidth: 560 }}>
             <thead>
               <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>

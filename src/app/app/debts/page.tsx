@@ -124,7 +124,55 @@ export default async function DebtsPage() {
       </div>
 
       <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
-       <div className="overflow-x-auto">
+       {/* Mobile cards */}
+       <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+         {sorted.map((pos, i) => {
+           const allBalances = Object.entries(pos.balances).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+           const isSettled = allBalances.every(([, v]) => Math.abs(v) < 0.001);
+           const badge = ageBadge(pos.ageDays);
+           return (
+             <Link key={pos.clientId} href={`/app/debts/${pos.clientId}`}
+               className="px-4 py-3 flex flex-col gap-1.5 active:opacity-70"
+               style={{ borderBottom: i < sorted.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
+               <div className="flex items-baseline justify-between gap-2">
+                 <span className="font-medium text-slate-200 text-sm">{pos.clientName}</span>
+                 {!isSettled && (
+                   <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: badge.color }}>
+                     <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: badge.color }} />
+                     {badge.label}
+                   </span>
+                 )}
+               </div>
+               {allBalances.length === 0 ? (
+                 <span className="text-xs text-slate-600">—</span>
+               ) : (
+                 <div className="flex flex-col gap-0.5">
+                   {allBalances.map(([cur, net]) => {
+                     const settled = Math.abs(net) < 0.001;
+                     return (
+                       <span key={cur} className="text-xs font-mono"
+                         style={{ color: settled ? "var(--text-4)" : net > 0 ? "var(--accent)" : "var(--red)" }}>
+                         {settled ? `0 ${cur}` : `${net > 0 ? "+" : ""}${net.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${cur}`}
+                         {!settled && (
+                           <span className="ml-1 text-slate-600 font-sans text-[10px]">
+                             {net > 0 ? "they owe us" : "we owe them"}
+                           </span>
+                         )}
+                       </span>
+                     );
+                   })}
+                 </div>
+               )}
+               <div className="flex items-center justify-between text-[10px] font-mono" style={{ color: "var(--text-4)" }}>
+                 <span>{pos.txCount} tx{pos.txCount === 1 ? "" : "s"}{pos.oldestDate ? ` · since ${pos.oldestDate}` : ""}</span>
+                 {pos.ageDays > 0 && <span>{pos.ageDays}d</span>}
+               </div>
+             </Link>
+           );
+         })}
+       </div>
+       {/* Desktop table */}
+       <div className="hidden sm:block overflow-x-auto">
         <table className="w-full text-sm" style={{ minWidth: 640 }}>
           <thead>
             <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>

@@ -211,6 +211,42 @@ export default async function ClientDetailPage({ params }: PageProps) {
           <p className="text-sm text-slate-600">No transactions assigned to this client.</p>
         ) : (
           <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
+            {/* Mobile cards */}
+            <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+              {txRows.map((tx, i) => {
+                const txLegs = legsByTx.get(tx.id) ?? [];
+                const inLeg = txLegs.find((l) => l.direction === "in");
+                const outLeg = txLegs.find((l) => l.direction === "out");
+                return (
+                  <div key={tx.id} className="px-4 py-3 flex flex-col gap-1.5"
+                    style={{ borderBottom: i < txRows.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
+                      </span>
+                      <span className="text-xs text-slate-400">{tx.transactionType ?? tx.type}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 text-xs font-mono">
+                      {inLeg && (
+                        <span className="text-emerald-400">
+                          +{Number(inLeg.amount).toLocaleString()} {inLeg.currency}
+                        </span>
+                      )}
+                      {outLeg && (
+                        <span className="text-red-400">
+                          -{Number(outLeg.amount).toLocaleString()} {outLeg.currency}
+                        </span>
+                      )}
+                    </div>
+                    {tx.isMatched && (
+                      <span className="text-[10px]" style={{ color: "var(--accent)" }}>✓ matched</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
@@ -248,6 +284,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

@@ -126,6 +126,46 @@ export default async function ExpensesPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--inner-border)" }}>
+          {/* Mobile cards */}
+          <div className="sm:hidden flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+            {rows.map((tx, i) => {
+              const txLegs = legsByTx.get(tx.id) ?? [];
+              const outLeg = txLegs.find((l) => l.direction === "out");
+              const client = clientByTx.get(tx.id);
+              return (
+                <a key={tx.id} href={`/app/transactions?edit=${tx.id}`}
+                  className="px-4 py-3 flex flex-col gap-1.5 active:opacity-70"
+                  style={{ borderBottom: i < rows.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] font-mono text-slate-500">
+                      {new Date(tx.timestamp).toLocaleString("sv-SE").slice(0, 16).replace("T", " ")}
+                    </span>
+                    {outLeg && (
+                      <span className="text-sm font-mono" style={{ color: "var(--red)" }}>
+                        −{Number(outLeg.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })} {outLeg.currency}
+                      </span>
+                    )}
+                  </div>
+                  {tx.comment && <span className="text-xs text-slate-400">{tx.comment}</span>}
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span className="font-mono truncate">
+                      {outLeg?.location
+                        ? (outLeg.location.length > 16 ? `${outLeg.location.slice(0, 6)}…${outLeg.location.slice(-4)}` : outLeg.location)
+                        : "—"}
+                    </span>
+                    {client && (
+                      <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]"
+                        style={{ backgroundColor: "var(--blue-chip-bg)", color: "var(--blue)" }}>
+                        {client.name}{client.surname ? ` ${client.surname}` : ""}
+                      </span>
+                    )}
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
@@ -193,6 +233,7 @@ export default async function ExpensesPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
