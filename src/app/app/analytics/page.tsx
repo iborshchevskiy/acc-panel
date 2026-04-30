@@ -280,190 +280,519 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
     .where(and(eq(transactions.organizationId, orgId), eq(transactionLegs.direction, "fee"), isNull(transactions.deletedAt), ...dateConditions))
     .groupBy(transactionLegs.currency);
 
+  // ── Activity heatmap: trades by day-of-week × hour-of-day ────────────────
+  const heatmapRows = await db.execute(sql`
+    SELECT EXTRACT(DOW  FROM t.timestamp)::int AS dow,
+           EXTRACT(HOUR FROM t.timestamp)::int AS hr,
+           COUNT(*)::int AS n
+      FROM ${transactions} t
+     WHERE t.organization_id = ${orgId}
+       AND t.deleted_at IS NULL
+       AND t.transaction_type = 'Exchange'
+       ${isCustom && customFrom ? sql`AND t.timestamp >= ${new Date(customFrom)}` : sql``}
+       ${isCustom && customTo ? sql`AND t.timestamp <= ${new Date(customTo + "T23:59:59")}` : sql``}
+     GROUP BY 1, 2
+  `) as unknown as Array<{ dow: number; hr: number; n: number }>;
+
+  // 7×24 grid: dow 0=Sun…6=Sat, hr 0…23. Reorder to Mon-first for display.
+  const heatGrid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+  let heatMax = 0;
+  for (const r of heatmapRows) {
+    const dowMonFirst = r.dow === 0 ? 6 : r.dow - 1;
+    heatGrid[dowMonFirst][r.hr] = r.n;
+    if (r.n > heatMax) heatMax = r.n;
+  }
+  const heatHasData = heatMax > 0;
+
+  // ── Aggregate KPIs ───────────────────────────────────────────────────────
+  // Volume-weighted average margin% across pairs that have both buy + sell.
+  let weightedMarginNum = 0;
+  let weightedMarginDen = 0;
+  for (const s of [...spreadMap.values()]) {
+    if (s.marginPct == null) continue;
+    const pairAgg = spreadAggs.find((a) => a.pair === s.pair);
+    if (!pairAgg) continue;
+    const vol = parseFloat(pairAgg.volume) || 0;
+    weightedMarginNum += s.marginPct * vol;
+    weightedMarginDen += vol;
+  }
+  const avgMargin = weightedMarginDen > 0 ? weightedMarginNum / weightedMarginDen : null;
+
+  // MoM change: compare last full bucket vs previous bucket on tradeCount.
+  const last = periods[periods.length - 1];
+  const prev = periods[periods.length - 2];
+  const tradeCountDelta = last && prev && prev.tradeCount > 0
+    ? ((last.tradeCount - prev.tradeCount) / prev.tradeCount) * 100
+    : null;
+
+
+  // ── Visualization helpers ────────────────────────────────────────────────
+  // Build a tiny SVG line+area path for a series of values normalised to a
+  // fixed viewBox. Returns the path strings; the parent SVG controls colour.
+  function sparklinePaths(values: number[], width: number, height: number) {
+    if (values.length === 0 || values.every((v) => v === 0)) return null;
+    const max = Math.max(...values);
+    const min = Math.min(0, ...values);
+    const range = max - min || 1;
+    const step = values.length > 1 ? width / (values.length - 1) : width;
+    const ys = values.map((v) => height - ((v - min) / range) * height);
+    const linePoints = values.map((_, i) => `${(i * step).toFixed(2)},${ys[i].toFixed(2)}`);
+    const line = `M ${linePoints.join(" L ")}`;
+    const area = `${line} L ${(width).toFixed(2)},${height} L 0,${height} Z`;
+    return { line, area };
+  }
+
+  // Top 3 currencies by volume — used in the timeline chart.
+  const timelineCurrencies = topCurrencies.slice(0, 3);
+  const seriesPalette = ["var(--indigo)", "var(--accent)", "var(--amber)"];
+  const totalPeriodVolume = periods.reduce((s, p) => s + Object.values(p.volume).reduce((a, b) => a + b, 0), 0);
+
+  // Per-currency volume share (for the Currency Mix bars).
+  const grandVolume = [...totalVolume.values()].reduce((a, b) => a + b, 0);
+  const currencyMix = [...totalVolume.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([cur, vol]) => ({ cur, vol, share: grandVolume > 0 ? vol / grandVolume : 0 }));
+
+  // Max margin% for visual normalisation in the spread cards.
+  const maxAbsMargin = spreads.reduce((m, s) =>
+    s.marginPct != null ? Math.max(m, Math.abs(s.marginPct)) : m, 0) || 1;
+
+  // For period sparkline column: normalise volume bars to the largest bucket.
+  const maxBucketVolume = periods.reduce(
+    (m, p) => Math.max(m, Object.values(p.volume).reduce((a, b) => a + b, 0)),
+    0
+  );
+
+  const HOURS = Array.from({ length: 24 }, (_, i) => i);
+  const DAYS_MON = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   return (
-    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-100">Analytics</h1>
-          <p className="text-sm text-slate-500">{totalTxs.toLocaleString()} transactions</p>
-        </div>
-        <RefreshButton />
-        <div className="flex gap-1 rounded-lg p-1" style={{ backgroundColor: "var(--raised-hi)" }}>
-          {(["day", "week", "month"] as const).map((b) => (
-            <a key={b} href={`?bucket=${b}`}
-              className="h-7 px-3 flex items-center rounded text-xs font-medium transition-colors capitalize"
-              style={!isCustom && bucket === b
-                ? { backgroundColor: "var(--accent)", color: "var(--surface)" }
-                : { color: "var(--text-2)" }}>
-              {b}
-            </a>
-          ))}
-          <CustomRangePicker
-            active={isCustom}
-            initialFrom={customFrom}
-            initialTo={customTo}
-          />
-        </div>
-      </div>
+    <div className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6" style={{ color: "var(--text-1)" }}>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {[
-          { label: "Total Txs", value: totalTxs.toLocaleString(), sub: "all time" },
-          { label: "Exchange Txs", value: exchangeTxs.toLocaleString(), sub: "matched trades" },
-          { label: "Top Volume", value: topCurrencies[0] ?? "—", sub: totalVolume.get(topCurrencies[0] ?? "") ? `${(totalVolume.get(topCurrencies[0]!) ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${topCurrencies[0]}` : "no data" },
-          { label: "Net Fees", value: feeRows[0]?.currency ?? "—", sub: feeRows[0] ? `${parseFloat(feeRows[0].total ?? "0").toFixed(4)} ${feeRows[0].currency}` : "no fees" },
-        ].map((card) => (
-          <div key={card.label} className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
-            <p className="text-xs text-slate-500">{card.label}</p>
-            <p className="mt-1 text-xl font-semibold text-slate-100">{card.value}</p>
-            <p className="text-xs text-slate-600">{card.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Period P&L table */}
-      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
-        <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
-          <h2 className="text-sm font-medium text-slate-300">
+      {/* ── REPORT MASTHEAD ─────────────────────────────────────────────── */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex flex-col gap-1">
+          <p className="text-[10px] font-medium tracking-[0.2em] uppercase" style={{ color: "var(--text-4)" }}>
+            Analytics Report
+          </p>
+          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
             {isCustom && customFrom && customTo
-              ? `P&L: ${customFrom} – ${customTo}`
-              : `P&L by ${bucket}`}
+              ? `${customFrom} → ${customTo}`
+              : `${bucket[0].toUpperCase()}${bucket.slice(1)}ly view`}
+          </h1>
+          <p className="text-xs font-mono" style={{ color: "var(--text-3)" }}>
+            {totalTxs.toLocaleString()} transactions · {exchangeTxs.toLocaleString()} exchanges · {periods.length} {bucket}
+            {periods.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <RefreshButton />
+          <div className="flex gap-1 rounded-lg p-1" style={{ backgroundColor: "var(--raised-hi)" }}>
+            {(["day", "week", "month"] as const).map((b) => (
+              <a key={b} href={`?bucket=${b}`}
+                className="h-7 px-3 flex items-center rounded text-xs font-medium transition-colors capitalize"
+                style={!isCustom && bucket === b
+                  ? { backgroundColor: "var(--accent)", color: "var(--surface)" }
+                  : { color: "var(--text-2)" }}>
+                {b}
+              </a>
+            ))}
+            <CustomRangePicker active={isCustom} initialFrom={customFrom} initialTo={customTo} />
+          </div>
+        </div>
+      </header>
+
+      {/* ── KPI STRIP ───────────────────────────────────────────────────── */}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard
+          label="Exchange Trades"
+          value={exchangeTxs.toLocaleString()}
+          delta={tradeCountDelta}
+          deltaLabel="vs prev"
+          accent="var(--indigo)"
+        />
+        <KpiCard
+          label="Top Volume"
+          value={topCurrencies[0]
+            ? (totalVolume.get(topCurrencies[0]) ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })
+            : "—"}
+          sub={topCurrencies[0] ?? "no data"}
+          accent="var(--accent)"
+        />
+        <KpiCard
+          label="Avg Margin"
+          value={avgMargin != null ? `${avgMargin >= 0 ? "+" : ""}${avgMargin.toFixed(2)}%` : "—"}
+          sub="vol-weighted across pairs"
+          accent={avgMargin != null && avgMargin >= 0 ? "var(--accent)" : "var(--red)"}
+          valueColor={avgMargin != null ? (avgMargin >= 0 ? "var(--accent)" : "var(--red)") : undefined}
+        />
+        <KpiCard
+          label="Fees Paid"
+          value={feeRows[0]
+            ? `${parseFloat(feeRows[0].total ?? "0").toLocaleString(undefined, { maximumFractionDigits: 4 })}`
+            : "—"}
+          sub={feeRows[0] ? `${feeRows[0].currency}${feeRows.length > 1 ? ` +${feeRows.length - 1} more` : ""}` : "no fees"}
+          accent="var(--amber)"
+        />
+      </section>
+
+      {/* ── VOLUME TIMELINE ─────────────────────────────────────────────── */}
+      {periods.length > 0 && timelineCurrencies.length > 0 && (
+        <section className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Volume Timeline</h2>
+              <p className="text-[10px]" style={{ color: "var(--text-4)" }}>
+                top {timelineCurrencies.length} currencies · {periods.length} {bucket}{periods.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              {timelineCurrencies.map((c, idx) => (
+                <span key={c} className="flex items-center gap-1.5 text-[11px] font-mono" style={{ color: "var(--text-3)" }}>
+                  <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: seriesPalette[idx] }} />
+                  {c}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3">
+            {timelineCurrencies.map((c, idx) => {
+              const series = periods.map((p) => p.volume[c] ?? 0);
+              const max = Math.max(...series);
+              const total = series.reduce((s, v) => s + v, 0);
+              const paths = sparklinePaths(series, 600, 80);
+              const color = seriesPalette[idx];
+              return (
+                <div key={c} className="px-4 py-4 flex flex-col gap-2" style={{
+                  borderRight: idx < timelineCurrencies.length - 1 ? "1px solid var(--border)" : "none",
+                  borderTop: idx > 0 ? "1px solid var(--border)" : "none",
+                }}>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs font-medium" style={{ color: "var(--text-2)" }}>{c}</span>
+                    <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>
+                      peak {max.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  <p className="font-[family-name:var(--font-ibm-plex-mono)] text-xl font-medium leading-none" style={{ color }}>
+                    {total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                  {paths && (
+                    <svg viewBox="0 0 600 80" className="w-full mt-1" preserveAspectRatio="none" style={{ height: 56 }}>
+                      <defs>
+                        <linearGradient id={`grad-${c}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+                          <stop offset="100%" stopColor={color} stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path d={paths.area} fill={`url(#grad-${c})`} />
+                      <path d={paths.line} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+                    </svg>
+                  )}
+                  <div className="flex items-center justify-between text-[9px] font-mono" style={{ color: "var(--text-4)" }}>
+                    <span>{periods[0]?.label}</span>
+                    <span>{periods[periods.length - 1]?.label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── CURRENCY MIX + PAIR PERFORMANCE side by side on desktop ─────── */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+
+        {/* Currency mix bars */}
+        {currencyMix.length > 0 && (
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
+            <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
+              <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Currency Mix</h2>
+              <span className="text-[10px]" style={{ color: "var(--text-4)" }}>by raw volume share</span>
+            </div>
+            <div className="px-4 py-3 flex flex-col gap-2.5">
+              {currencyMix.map(({ cur, vol, share }) => (
+                <div key={cur} className="flex flex-col gap-1">
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="font-medium" style={{ color: "var(--text-2)" }}>{cur}</span>
+                    <span className="font-mono" style={{ color: "var(--text-3)" }}>
+                      {vol.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      <span className="ml-2" style={{ color: "var(--text-4)" }}>{(share * 100).toFixed(1)}%</span>
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--raised)" }}>
+                    <div className="h-full rounded-full" style={{
+                      width: `${Math.max(2, share * 100)}%`,
+                      backgroundColor: "var(--accent)",
+                      opacity: 0.4 + share * 0.6,
+                    }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Pair performance — visual margin bars */}
+        {spreads.length > 0 && (
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
+            <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
+              <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Pair Margin</h2>
+              <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
+                buy → sell vwap · margin% bar normalised
+              </span>
+            </div>
+            <div className="flex flex-col">
+              {spreads.slice(0, 8).map((s, i) => {
+                const m = s.marginPct ?? 0;
+                const widthPct = Math.min(100, (Math.abs(m) / maxAbsMargin) * 100);
+                const isPos = m >= 0;
+                return (
+                  <div key={s.pair} className="px-4 py-3 flex flex-col gap-1.5"
+                    style={{ borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-xs font-mono" style={{ color: "var(--text-2)" }}>{s.pair}</span>
+                      <span className="text-xs font-mono"
+                        style={{ color: s.marginPct == null ? "var(--text-4)" : isPos ? "var(--accent)" : "var(--red)" }}>
+                        {s.marginPct != null ? `${isPos ? "+" : ""}${m.toFixed(2)}%` : "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] font-mono" style={{ color: "var(--text-4)" }}>
+                      <span>
+                        buy {s.avgBuy != null ? s.avgBuy.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
+                        <span className="mx-1.5">→</span>
+                        sell {s.avgSell != null ? s.avgSell.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
+                      </span>
+                      <span>{s.buyCount} / {s.sellCount}</span>
+                    </div>
+                    <div className="relative h-1 rounded-full" style={{ backgroundColor: "var(--raised)" }}>
+                      <div className="absolute top-0 bottom-0 rounded-full" style={{
+                        width: `${widthPct}%`,
+                        left: isPos ? "50%" : `${50 - widthPct}%`,
+                        backgroundColor: isPos ? "var(--accent)" : "var(--red)",
+                      }} />
+                      <div className="absolute top-0 bottom-0" style={{
+                        left: "50%",
+                        width: 1,
+                        backgroundColor: "color-mix(in srgb, var(--text-1) 18%, transparent)",
+                      }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ── PERIOD BREAKDOWN ────────────────────────────────────────────── */}
+      <section className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
+          <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>
+            {isCustom && customFrom && customTo ? `Breakdown: ${customFrom} – ${customTo}` : `${bucket[0].toUpperCase()}${bucket.slice(1)}ly Breakdown`}
           </h2>
+          <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>
+            net flow per top currency · period volume bar
+          </span>
         </div>
         {periods.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-600">No Exchange transactions found</div>
+          <div className="py-12 text-center text-sm" style={{ color: "var(--text-4)" }}>
+            No Exchange transactions in this range
+          </div>
         ) : (
-         <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: 640 }}>
-            <thead>
-              <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Period</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Trades</th>
-                {topCurrencies.map((c) => (
-                  <th key={c} className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Net {c}</th>
-                ))}
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Volume</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...periods].reverse().map((p, i, arr) => (
-                <tr key={p.period} style={{ backgroundColor: "var(--surface)", borderBottom: i < arr.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
-                  <td className="px-4 py-2.5 text-xs text-slate-400 font-mono">{p.label}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">{p.tradeCount}</td>
-                  {topCurrencies.map((c) => {
-                    const v = p.exchangePnl[c] ?? 0;
-                    return (
-                      <td key={c} className="px-4 py-2.5 text-xs font-mono text-right">
-                        {v !== 0 ? (
-                          <span style={{ color: v > 0 ? "var(--accent)" : "var(--red)" }}>
-                            {v > 0 ? "+" : ""}{v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ minWidth: 720 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Period</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Trades</th>
+                  {topCurrencies.map((c) => (
+                    <th key={c} className="px-4 py-2.5 text-right text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>Net {c}</th>
+                  ))}
+                  <th className="px-4 py-2.5 text-left text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)", width: 160 }}>Volume</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...periods].reverse().map((p, i, arr) => {
+                  const periodVolume = Object.values(p.volume).reduce((a, b) => a + b, 0);
+                  const volBar = maxBucketVolume > 0 ? periodVolume / maxBucketVolume : 0;
+                  return (
+                    <tr key={p.period} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
+                      <td className="px-4 py-2.5 text-xs font-mono" style={{ color: "var(--text-2)" }}>{p.label}</td>
+                      <td className="px-4 py-2.5 text-xs font-mono text-right" style={{ color: "var(--text-3)" }}>{p.tradeCount}</td>
+                      {topCurrencies.map((c) => {
+                        const v = p.exchangePnl[c] ?? 0;
+                        return (
+                          <td key={c} className="px-4 py-2.5 text-xs font-mono text-right">
+                            {v !== 0 ? (
+                              <span style={{ color: v > 0 ? "var(--accent)" : "var(--red)" }}>
+                                {v > 0 ? "+" : ""}{v.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                              </span>
+                            ) : <span style={{ color: "var(--text-4)" }}>—</span>}
+                          </td>
+                        );
+                      })}
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: "var(--raised)" }}>
+                            <div className="h-full rounded-full" style={{
+                              width: `${Math.max(2, volBar * 100)}%`,
+                              backgroundColor: "var(--indigo)",
+                              opacity: 0.5 + volBar * 0.5,
+                            }} />
+                          </div>
+                          <span className="text-[10px] font-mono shrink-0" style={{ color: "var(--text-4)" }}>
+                            {periodVolume > 0 ? periodVolume.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
                           </span>
-                        ) : <span className="text-slate-700">—</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "1px solid var(--border)", backgroundColor: "var(--raised-hi)" }}>
+                  <td className="px-4 py-2.5 text-xs font-medium" style={{ color: "var(--text-2)" }}>Total</td>
+                  <td className="px-4 py-2.5 text-xs font-mono text-right" style={{ color: "var(--text-2)" }}>
+                    {periods.reduce((s, p) => s + p.tradeCount, 0)}
+                  </td>
+                  {topCurrencies.map((c) => {
+                    const v = totalExchangePnl.get(c) ?? 0;
+                    return (
+                      <td key={c} className="px-4 py-2.5 text-xs font-mono font-medium text-right">
+                        <span style={{ color: v > 0 ? "var(--accent)" : v < 0 ? "var(--red)" : "var(--text-4)" }}>
+                          {v !== 0 ? `${v > 0 ? "+" : ""}${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
+                        </span>
                       </td>
                     );
                   })}
-                  <td className="px-4 py-2.5 text-xs text-slate-500 text-right font-mono">
-                    {Object.entries(p.volume)
-                      .slice(0, 2)
-                      .map(([c, v]) => `${v.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${c}`)
-                      .join(" / ") || "—"}
+                  <td className="px-4 py-2.5 text-[10px] font-mono text-right" style={{ color: "var(--text-3)" }}>
+                    {totalPeriodVolume.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ backgroundColor: "var(--raised-hi)", borderTop: "1px solid var(--inner-border)" }}>
-                <td className="px-4 py-2.5 text-xs font-medium text-slate-400">Total</td>
-                <td className="px-4 py-2.5 text-xs text-slate-500">{periods.reduce((s, p) => s + p.tradeCount, 0)}</td>
-                {topCurrencies.map((c) => {
-                  const v = totalExchangePnl.get(c) ?? 0;
-                  return (
-                    <td key={c} className="px-4 py-2.5 text-xs font-mono font-medium text-right">
-                      <span style={{ color: v > 0 ? "var(--accent)" : v < 0 ? "var(--red)" : "var(--text-2)" }}>
-                        {v !== 0 ? `${v > 0 ? "+" : ""}${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
-                      </span>
-                    </td>
-                  );
-                })}
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-         </div>
+              </tfoot>
+            </table>
+          </div>
         )}
-      </div>
+      </section>
 
-      {/* Spread analysis */}
-      {spreads.length > 0 && (
-        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--inner-border)" }}>
-          <div className="px-4 py-3" style={{ backgroundColor: "var(--raised-hi)", borderBottom: "1px solid var(--inner-border)" }}>
-            <h2 className="text-sm font-medium text-slate-300">Spread / Margin by pair</h2>
+      {/* ── ACTIVITY HEATMAP ────────────────────────────────────────────── */}
+      {heatHasData && (
+        <section className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
+          <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
+            <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Activity Heatmap</h2>
+            <span className="text-[10px] font-mono" style={{ color: "var(--text-4)" }}>
+              trades by day-of-week × hour · UTC · max {heatMax}
+            </span>
           </div>
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: 720 }}>
-            <thead>
-              <tr style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--inner-border)" }}>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">Pair</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Buys</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Sells</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Avg Buy</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Avg Sell</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Spread</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">Margin</th>
-              </tr>
-            </thead>
-            <tbody>
-              {spreads.map((s, i) => (
-                <tr key={s.pair} style={{ backgroundColor: "var(--surface)", borderBottom: i < spreads.length - 1 ? "1px solid var(--inner-border)" : "none" }}>
-                  <td className="px-4 py-2.5 text-xs font-mono text-slate-300">{s.pair}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500 text-right">{s.buyCount}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500 text-right">{s.sellCount}</td>
-                  <td className="px-4 py-2.5 text-xs font-mono text-slate-400 text-right">
-                    {s.avgBuy != null ? s.avgBuy.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs font-mono text-slate-400 text-right">
-                    {s.avgSell != null ? s.avgSell.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs font-mono text-right">
-                    {s.spread != null ? (
-                      <span style={{ color: s.spread >= 0 ? "var(--accent)" : "var(--red)" }}>
-                        {s.spread.toLocaleString(undefined, { maximumFractionDigits: 4 })} {s.quoteCurrency}
-                      </span>
-                    ) : "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs font-mono text-right">
-                    {s.marginPct != null ? (
-                      <span style={{ color: s.marginPct >= 0 ? "var(--accent)" : "var(--red)" }}>
-                        {s.marginPct.toFixed(2)}%
-                      </span>
-                    ) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="px-4 py-4 overflow-x-auto">
+            <div className="inline-block min-w-full">
+              {/* Hour ruler */}
+              <div className="flex pl-9">
+                {HOURS.map((h) => (
+                  <div key={h} className="flex-1 min-w-[14px] text-center text-[8px] font-mono"
+                    style={{ color: "var(--text-4)" }}>
+                    {h % 3 === 0 ? h.toString().padStart(2, "0") : ""}
+                  </div>
+                ))}
+              </div>
+              {/* Rows */}
+              <div className="flex flex-col gap-0.5 mt-1.5">
+                {DAYS_MON.map((day, dIdx) => (
+                  <div key={day} className="flex items-center gap-1">
+                    <span className="w-7 text-[10px] font-mono text-right" style={{ color: "var(--text-4)" }}>{day}</span>
+                    <div className="flex flex-1 gap-0.5">
+                      {HOURS.map((h) => {
+                        const v = heatGrid[dIdx][h];
+                        const intensity = heatMax > 0 ? v / heatMax : 0;
+                        return (
+                          <div key={h} className="flex-1 min-w-[12px] rounded-sm"
+                            title={`${day} ${h.toString().padStart(2, "0")}:00 — ${v} trade${v === 1 ? "" : "s"}`}
+                            style={{
+                              height: 18,
+                              backgroundColor: v === 0
+                                ? "color-mix(in srgb, var(--text-1) 4%, transparent)"
+                                : `color-mix(in srgb, var(--accent) ${10 + intensity * 80}%, transparent)`,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Legend */}
+              <div className="flex items-center gap-2 mt-3 pl-9">
+                <span className="text-[9px] font-mono" style={{ color: "var(--text-4)" }}>quiet</span>
+                <div className="flex gap-0.5">
+                  {[0.05, 0.2, 0.45, 0.7, 0.9].map((step) => (
+                    <div key={step} className="rounded-sm"
+                      style={{
+                        width: 12, height: 12,
+                        backgroundColor: `color-mix(in srgb, var(--accent) ${10 + step * 80}%, transparent)`,
+                      }}
+                    />
+                  ))}
+                </div>
+                <span className="text-[9px] font-mono" style={{ color: "var(--text-4)" }}>busy</span>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Fee summary */}
+      {/* ── FEES PANEL ──────────────────────────────────────────────────── */}
       {feeRows.length > 0 && (
-        <div className="rounded-xl p-4" style={{ backgroundColor: "var(--raised-hi)", border: "1px solid var(--inner-border)" }}>
-          <h2 className="text-sm font-medium text-slate-300 mb-3">Fees paid</h2>
-          <div className="flex flex-wrap gap-4">
+        <section className="rounded-xl px-4 py-4" style={{ border: "1px solid var(--border)", backgroundColor: "var(--surface)" }}>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium" style={{ color: "var(--text-2)" }}>Fees Paid</h2>
+            <span className="text-[10px]" style={{ color: "var(--text-4)" }}>{feeRows.length} currenc{feeRows.length === 1 ? "y" : "ies"}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {feeRows.map((f) => (
-              <div key={f.currency} className="text-sm">
-                <span className="text-slate-400 font-mono">
+              <div key={f.currency} className="rounded-lg px-3 py-2.5"
+                style={{ backgroundColor: "var(--raised)", border: "1px solid var(--inner-border)" }}>
+                <p className="text-[10px] font-medium tracking-wider uppercase" style={{ color: "var(--text-4)" }}>{f.currency}</p>
+                <p className="mt-1 font-[family-name:var(--font-ibm-plex-mono)] text-base font-medium" style={{ color: "var(--amber)" }}>
                   {parseFloat(f.total ?? "0").toLocaleString(undefined, { maximumFractionDigits: 6 })}
-                </span>
-                <span className="ml-1 text-slate-600">{f.currency}</span>
+                </p>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
+    </div>
+  );
+}
+
+// ── Tiny components ────────────────────────────────────────────────────────
+function KpiCard({
+  label, value, sub, delta, deltaLabel, accent, valueColor,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  delta?: number | null;
+  deltaLabel?: string;
+  accent: string;
+  valueColor?: string;
+}) {
+  return (
+    <div className="rounded-xl p-4 flex flex-col gap-1.5"
+      style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderTop: `2px solid ${accent}` }}>
+      <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "var(--text-4)" }}>{label}</p>
+      <p className="font-[family-name:var(--font-ibm-plex-mono)] text-2xl font-medium leading-none"
+        style={{ color: valueColor ?? "var(--text-1)" }}>
+        {value}
+      </p>
+      <div className="flex items-center justify-between text-[11px]" style={{ color: "var(--text-4)" }}>
+        <span>{sub ?? ""}</span>
+        {delta != null && Number.isFinite(delta) && (
+          <span style={{ color: delta >= 0 ? "var(--accent)" : "var(--red)" }} className="font-mono">
+            {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(0)}% {deltaLabel ?? ""}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
